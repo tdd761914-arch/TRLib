@@ -3,7 +3,7 @@
 use std::env;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, BufWriter, Write};
-use std::path::Path;
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
@@ -17,37 +17,78 @@ fn main() -> ExitCode {
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let mut arguments = env::args_os();
-    let _program = arguments.next();
-    let Some(input_path) = arguments.next() else {
-        return Err("usage: tl-prefix-gen INPUT.tl [OUTPUT.rs]".into());
-    };
-    let output_path = arguments.next();
-    if arguments.next().is_some() {
-        return Err("too many arguments".into());
+    let arguments: Vec<_> = env::args_os().skip(1).collect();
+    if arguments.is_empty() {
+        return Err(
+            "usage: tl-prefix-gen INPUT.tl [OUTPUT.rs] | --output OUTPUT.rs INPUT.tl...".into(),
+        );
     }
 
-    let input = BufReader::new(File::open(&input_path)?);
-    let source_name = Path::new(&input_path)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("schema.tl");
+    if arguments
+        .first()
+        .is_some_and(|argument| argument == "--output")
+    {
+        let output_path = arguments.get(1).ok_or("--output requires a path")?;
+        let inputs: Vec<PathBuf> = arguments[2..].iter().map(PathBuf::from).collect();
+        if inputs.is_empty() {
+            return Err("--output requires at least one input schema".into());
+        }
+        let output = BufWriter::new(File::create(output_path)?);
+        return generate_paths(&inputs, output);
+    }
 
-    match output_path {
-        Some(path) => {
-            let output = BufWriter::new(File::create(path)?);
-            generate(input, output, source_name)
-        }
-        None => {
-            let output = io::stdout().lock();
-            generate(input, output, source_name)
-        }
+    if arguments.len() > 2 {
+        return Err("multiple schemas require --output OUTPUT.rs".into());
+    }
+    let input_path = PathBuf::from(&arguments[0]);
+    let inputs = [input_path];
+    match arguments.get(1) {
+        Some(path) => generate_paths(&inputs, BufWriter::new(File::create(path)?)),
+        None => generate_paths(&inputs, io::stdout().lock()),
     }
 }
 
+fn generate_paths<W: Write>(
+    paths: &[PathBuf],
+    mut output: W,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut source_names = String::new();
+    for (index, path) in paths.iter().enumerate() {
+        if index != 0 {
+            source_names.push_str(", ");
+        }
+        source_names.push_str(
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("schema.tl"),
+        );
+    }
+    write_header(&mut output, &source_names)?;
+    for path in paths {
+        let source_name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("schema.tl");
+        write_declarations(BufReader::new(File::open(path)?), &mut output, source_name)?;
+    }
+    output.flush()?;
+    Ok(())
+}
+
+#[cfg(test)]
 fn generate<R: BufRead, W: Write>(
     mut input: R,
     mut output: W,
+    source_name: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    write_header(&mut output, source_name)?;
+    write_declarations(&mut input, &mut output, source_name)?;
+    output.flush()?;
+    Ok(())
+}
+
+fn write_header<W: Write>(
+    output: &mut W,
     source_name: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     writeln!(output, "// @generated from {source_name}; do not edit.")?;
@@ -58,7 +99,14 @@ fn generate<R: BufRead, W: Write>(
     writeln!(output)?;
     writeln!(output, "use crate::tl::ConstructorId;")?;
     writeln!(output)?;
+    Ok(())
+}
 
+fn write_declarations<R: BufRead, W: Write>(
+    mut input: R,
+    output: &mut W,
+    source_name: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut line = String::new();
     let mut line_number = 0u64;
     loop {
@@ -87,7 +135,6 @@ fn generate<R: BufRead, W: Write>(
             "pub const {constant}: ConstructorId = ConstructorId::new(0x{encoded_id});"
         )?;
     }
-    output.flush()?;
     Ok(())
 }
 

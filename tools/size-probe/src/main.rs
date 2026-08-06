@@ -7,6 +7,13 @@ use trlib_core::crypto::{AuthKeyRef, CryptoDirection, RustCrypto, SessionCrypto}
 use trlib_core::mtproto::ExternalEnvelope;
 #[cfg(not(feature = "transport-intermediate"))]
 use trlib_core::mtproto::parse_external;
+#[cfg(feature = "tdlib-compat")]
+use trlib_core::session::{
+    SESSION_DOCUMENT_BYTES, SESSION_RECORD_BYTES, SessionKey, SessionMetadata, SessionRecordRef,
+    seal,
+};
+#[cfg(feature = "tdlib-compat")]
+use trlib_core::tdlib::{TdDispatch, parse_request, write_request};
 #[cfg(feature = "transport-intermediate")]
 use trlib_core::{
     config::GatewayConfig,
@@ -84,6 +91,8 @@ fn main() {
 
     #[cfg(feature = "crypto-rustcrypto")]
     link_crypto_path();
+    #[cfg(feature = "tdlib-compat")]
+    link_tdlib_compat_path();
 }
 
 #[cfg(feature = "crypto-rustcrypto")]
@@ -109,4 +118,56 @@ fn link_crypto_path() {
         )
         .expect("open");
     println!("crypto_guard={}", black_box(block[0]));
+}
+
+#[cfg(feature = "tdlib-compat")]
+fn link_tdlib_compat_path() {
+    let parameters = parse_request(
+        br#"{"@type":"setTdlibParameters","api_id":1,"api_hash":"h","device_model":"d","system_version":"s","application_version":"a","system_language_code":"en"}"#,
+    )
+    .expect("parameters");
+    let mut request_output = [0u8; 128];
+    let context = {
+        let mut writer = trlib_core::tl::Writer::new(&mut request_output);
+        match write_request(&mut writer, parameters, None, None).expect("parameters dispatch") {
+            TdDispatch::Parameters(context) => context,
+            TdDispatch::Method(_) => panic!("unexpected RPC method"),
+        }
+    };
+    let request =
+        parse_request(br#"{"@type":"setAuthenticationPhoneNumber","phone_number":"+12025550123"}"#)
+            .expect("phone");
+    let mut writer = trlib_core::tl::Writer::new(&mut request_output);
+    let method = write_request(&mut writer, request, Some(context), None).expect("send code");
+
+    let auth_key = [7u8; 256];
+    let metadata = SessionMetadata {
+        dc_id: 2,
+        auth_key_id: 3,
+        server_salt: 4,
+        session_id: 5,
+        sequence_number: 6,
+        pts: 7,
+        qts: 8,
+        date: 9,
+        seq: 10,
+        unread_count: 11,
+    };
+    let key = SessionKey::from_bytes([8; 32]);
+    let mut crypto_scratch = [0u8; SESSION_RECORD_BYTES];
+    let mut document = [0u8; SESSION_DOCUMENT_BYTES];
+    let length = seal(
+        &key,
+        &[9; 16],
+        SessionRecordRef::new(metadata, &auth_key),
+        &mut crypto_scratch,
+        &mut document,
+    )
+    .expect("session document");
+    println!(
+        "tdlib_compat_guard={:?}:{}:{}",
+        black_box(method),
+        black_box(request_output[0]),
+        black_box(length)
+    );
 }

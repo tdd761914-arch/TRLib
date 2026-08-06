@@ -32,6 +32,15 @@ impl<'a> Writer<'a> {
         &self.output[..self.position]
     }
 
+    /// Returns the initialized output prefix mutably.
+    ///
+    /// This is primarily useful for in-place MTProto encryption after an
+    /// envelope has been serialized into the caller-owned network buffer.
+    #[inline]
+    pub fn written_mut(&mut self) -> &mut [u8] {
+        &mut self.output[..self.position]
+    }
+
     /// Writes raw bytes.
     pub fn write_all(&mut self, bytes: &[u8]) -> Result<()> {
         let end = self.position.checked_add(bytes.len()).ok_or_else(|| {

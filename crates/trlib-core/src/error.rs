@@ -27,6 +27,8 @@ pub enum ErrorKind {
     FeatureDisabled = 8,
     /// A configured resource limit was exceeded.
     LimitExceeded = 9,
+    /// A request requires protocol state that the caller has not supplied.
+    InvalidState = 10,
 }
 
 /// Allocation-free error with the byte offset and one numeric detail.

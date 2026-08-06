@@ -7,6 +7,8 @@
 //! intentionally left to the embedding application, so the same state machine
 //! can run on epoll, io_uring, an embedded reactor, or a synchronous test loop.
 
+#[cfg(feature = "api")]
+pub mod api;
 pub mod config;
 #[cfg(feature = "crypto-rustcrypto")]
 pub mod crypto;
@@ -16,6 +18,10 @@ pub mod generated;
 pub mod mtproto;
 #[cfg(feature = "service")]
 pub mod service;
+#[cfg(feature = "session-document")]
+pub mod session;
+#[cfg(feature = "tdlib-compat")]
+pub mod tdlib;
 pub mod tl;
 pub mod transport;
 

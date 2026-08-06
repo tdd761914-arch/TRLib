@@ -45,21 +45,31 @@ impl Default for GatewayConfig {
 /// Bitset describing modules linked into this build.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(transparent)]
-pub struct CompiledFeatures(u8);
+pub struct CompiledFeatures(u16);
 
 impl CompiledFeatures {
     /// Abridged TCP framing is linked.
-    pub const ABRIDGED: u8 = 1 << 0;
+    pub const ABRIDGED: u16 = 1 << 0;
     /// Intermediate TCP framing is linked.
-    pub const INTERMEDIATE: u8 = 1 << 1;
+    pub const INTERMEDIATE: u16 = 1 << 1;
     /// MTProto service-object parsing is linked.
-    pub const SERVICE: u8 = 1 << 2;
+    pub const SERVICE: u16 = 1 << 2;
     /// RustCrypto-backed MTProto 2.0 session cryptography is linked.
-    pub const CRYPTO: u8 = 1 << 3;
+    pub const CRYPTO: u16 = 1 << 3;
+    /// Selected client API method bindings are linked.
+    pub const API: u16 = 1 << 4;
+    /// Phone-code authentication helpers are linked.
+    pub const AUTH: u16 = 1 << 5;
+    /// The encrypted session-document codec is linked.
+    pub const SESSION_DOCUMENT: u16 = 1 << 6;
+    /// Standard-library session-file helpers are linked.
+    pub const SESSION_FILE: u16 = 1 << 7;
+    /// The TDLib-shaped compatibility adapter is linked.
+    pub const TDLIB_COMPAT: u16 = 1 << 8;
 
     /// Returns the feature set selected at compile time.
     pub const fn current() -> Self {
-        let mut bits = 0;
+        let mut bits = 0u16;
         if cfg!(feature = "transport-abridged") {
             bits |= Self::ABRIDGED;
         }
@@ -72,18 +82,33 @@ impl CompiledFeatures {
         if cfg!(feature = "crypto-rustcrypto") {
             bits |= Self::CRYPTO;
         }
+        if cfg!(feature = "api") {
+            bits |= Self::API;
+        }
+        if cfg!(feature = "auth") {
+            bits |= Self::AUTH;
+        }
+        if cfg!(feature = "session-document") {
+            bits |= Self::SESSION_DOCUMENT;
+        }
+        if cfg!(feature = "session-file") {
+            bits |= Self::SESSION_FILE;
+        }
+        if cfg!(feature = "tdlib-compat") {
+            bits |= Self::TDLIB_COMPAT;
+        }
         Self(bits)
     }
 
     /// Checks whether a feature bit is present.
     #[inline]
-    pub const fn contains(self, feature: u8) -> bool {
+    pub const fn contains(self, feature: u16) -> bool {
         self.0 & feature != 0
     }
 
     /// Returns the raw feature bitset.
     #[inline]
-    pub const fn bits(self) -> u8 {
+    pub const fn bits(self) -> u16 {
         self.0
     }
 }

@@ -14,6 +14,11 @@ struct BuildConfig {
     transport_abridged: bool,
     transport_intermediate: bool,
     crypto_rustcrypto: bool,
+    api: bool,
+    auth: bool,
+    session_document: bool,
+    session_file: bool,
+    tdlib_compat: bool,
 }
 
 impl Default for BuildConfig {
@@ -26,6 +31,11 @@ impl Default for BuildConfig {
             transport_abridged: false,
             transport_intermediate: true,
             crypto_rustcrypto: false,
+            api: false,
+            auth: false,
+            session_document: false,
+            session_file: false,
+            tdlib_compat: false,
         }
     }
 }
@@ -92,7 +102,7 @@ fn run() -> Result<ExitCode, Box<dyn std::error::Error>> {
 }
 
 fn selected_features(config: &BuildConfig) -> Vec<&'static str> {
-    let mut features = Vec::with_capacity(5);
+    let mut features = Vec::with_capacity(10);
     let prefix = if config.package == "trlib-core" {
         ""
     } else {
@@ -119,6 +129,23 @@ fn selected_features(config: &BuildConfig) -> Vec<&'static str> {
         config.crypto_rustcrypto,
         "crypto-rustcrypto",
         "trlib-core/crypto-rustcrypto",
+    );
+    add(config.api, "api", "trlib-core/api");
+    add(config.auth, "auth", "trlib-core/auth");
+    add(
+        config.session_document,
+        "session-document",
+        "trlib-core/session-document",
+    );
+    add(
+        config.session_file,
+        "session-file",
+        "trlib-core/session-file",
+    );
+    add(
+        config.tdlib_compat,
+        "tdlib-compat",
+        "trlib-core/tdlib-compat",
     );
     features
 }
@@ -155,6 +182,11 @@ fn parse_config(text: &str) -> Result<BuildConfig, Box<dyn std::error::Error>> {
                 config.transport_intermediate = parse_bool(value, line_number)?
             }
             "crypto_rustcrypto" => config.crypto_rustcrypto = parse_bool(value, line_number)?,
+            "api" => config.api = parse_bool(value, line_number)?,
+            "auth" => config.auth = parse_bool(value, line_number)?,
+            "session_document" => config.session_document = parse_bool(value, line_number)?,
+            "session_file" => config.session_file = parse_bool(value, line_number)?,
+            "tdlib_compat" => config.tdlib_compat = parse_bool(value, line_number)?,
             _ => return Err(format!("line {line_number}: unknown key {key:?}").into()),
         }
     }
@@ -181,5 +213,17 @@ mod tests {
         )
         .expect("parse");
         assert_eq!(selected_features(&config), ["transport-abridged"]);
+    }
+
+    #[test]
+    fn tdlib_compatibility_is_strictly_opt_in() {
+        let disabled = parse_config("tdlib_compat = false\n").expect("parse disabled");
+        assert!(!selected_features(&disabled).contains(&"tdlib-compat"));
+
+        let enabled = parse_config("tdlib_compat = true\n").expect("parse enabled");
+        assert_eq!(
+            selected_features(&enabled),
+            ["service", "transport-intermediate", "tdlib-compat"]
+        );
     }
 }
