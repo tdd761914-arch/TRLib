@@ -1,0 +1,26 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --all -- --check
+      - run: cargo check -p trlib-core --no-default-features
+      - run: cargo test --workspace
+      - run: cargo test -p trlib-core --no-default-features --features crypto-rustcrypto
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: scripts/check-generated.sh
+      - run: cargo build --locked --release -p size-probe
+      - name: Enforce probe size ceiling
+        run: test "$(stat -c %s target/release/size-probe)" -le 524288

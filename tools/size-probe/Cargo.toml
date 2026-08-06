@@ -1,0 +1,16 @@
+[package]
+name = "size-probe"
+description = "Tiny TRLib parser throughput and binary-size probe"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["transport-intermediate"]
+transport-intermediate = ["trlib-core/transport-intermediate"]
+crypto-rustcrypto = ["trlib-core/crypto-rustcrypto"]
+
+[dependencies]
+trlib-core = { path = "../../crates/trlib-core", default-features = false }

@@ -1,0 +1,31 @@
+[package]
+name = "trlib-core"
+description = "Runtime-independent, zero-copy MTProto 2.0 and TL core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = ["service", "transport-abridged", "transport-intermediate"]
+std = []
+service = []
+transport-abridged = []
+transport-intermediate = []
+crypto-rustcrypto = ["dep:aes", "dep:sha2", "dep:subtle", "dep:zeroize"]
+
+[dependencies]
+aes = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
+subtle = { workspace = true, optional = true }
+zeroize = { workspace = true, optional = true }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+alloc_instead_of_core = "deny"
+clone_on_ref_ptr = "deny"
+missing_safety_doc = "deny"
+std_instead_of_core = "deny"

@@ -1,0 +1,11 @@
+[package]
+name = "tg-test-dc"
+description = "Live req_pq_multi smoke/latency probe for a Telegram test DC"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+trlib-core = { path = "../../crates/trlib-core", default-features = false, features = ["std", "transport-intermediate"] }
