@@ -7,13 +7,14 @@
 //! intentionally left to the embedding application, so the same state machine
 //! can run on epoll, io_uring, an embedded reactor, or a synchronous test loop.
 
-#[cfg(feature = "api")]
+#[cfg(any(feature = "api", feature = "api-common"))]
 pub mod api;
 pub mod config;
 #[cfg(feature = "crypto-rustcrypto")]
 pub mod crypto;
 pub mod error;
 pub mod gateway;
+#[rustfmt::skip]
 pub mod generated;
 pub mod mtproto;
 #[cfg(feature = "service")]

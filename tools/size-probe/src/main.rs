@@ -13,7 +13,9 @@ use trlib_core::session::{
     seal,
 };
 #[cfg(feature = "tdlib-compat")]
-use trlib_core::tdlib::{TdDispatch, parse_request, write_request};
+use trlib_core::tdlib::{
+    EntityCache, TdDispatch, parse_request, write_request, write_request_with_random_id,
+};
 #[cfg(feature = "transport-intermediate")]
 use trlib_core::{
     config::GatewayConfig,
@@ -129,16 +131,28 @@ fn link_tdlib_compat_path() {
     let mut request_output = [0u8; 128];
     let context = {
         let mut writer = trlib_core::tl::Writer::new(&mut request_output);
-        match write_request(&mut writer, parameters, None, None).expect("parameters dispatch") {
+        match write_request(&mut writer, parameters, None, None, None).expect("parameters dispatch")
+        {
             TdDispatch::Parameters(context) => context,
             TdDispatch::Method(_) => panic!("unexpected RPC method"),
         }
     };
-    let request =
-        parse_request(br#"{"@type":"setAuthenticationPhoneNumber","phone_number":"+12025550123"}"#)
-            .expect("phone");
+    let request = parse_request(
+        br#"{"@type":"sendMessage","chat_id":123,"options":{"@type":"messageSendOptions","disable_notification":true},"input_message_content":{"@type":"inputMessageText","text":{"@type":"formattedText","text":"hello","entities":[]}}}"#,
+    )
+    .expect("standard sendMessage");
+    let mut cache = EntityCache::new();
+    cache.insert_user(123, 456);
     let mut writer = trlib_core::tl::Writer::new(&mut request_output);
-    let method = write_request(&mut writer, request, Some(context), None).expect("send code");
+    let method = write_request_with_random_id(
+        &mut writer,
+        request,
+        Some(context),
+        None,
+        Some(&cache),
+        Some(9001),
+    )
+    .expect("standard sendMessage");
 
     let auth_key = [7u8; 256];
     let metadata = SessionMetadata {

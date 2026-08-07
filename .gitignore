@@ -2,3 +2,6 @@
 *.profraw
 *.swp
 .DS_Store
+
+# Handover notes for AI sessions, not project documentation.
+CHAT.md

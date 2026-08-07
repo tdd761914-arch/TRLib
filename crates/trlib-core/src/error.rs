@@ -29,6 +29,8 @@ pub enum ErrorKind {
     LimitExceeded = 9,
     /// A request requires protocol state that the caller has not supplied.
     InvalidState = 10,
+    /// The schema-driven writer rejected a field/value pair.
+    Schema = 11,
 }
 
 /// Allocation-free error with the byte offset and one numeric detail.

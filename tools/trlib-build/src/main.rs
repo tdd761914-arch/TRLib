@@ -19,7 +19,38 @@ struct BuildConfig {
     session_document: bool,
     session_file: bool,
     tdlib_compat: bool,
+    /// Per-schema-namespace override; `None` means "inherit the `api` key".
+    api_namespaces: Vec<(&'static str, Option<bool>)>,
 }
+
+const API_NAMESPACES: &[&str] = &[
+    "account",
+    "aicompose",
+    "auth",
+    "bots",
+    "channels",
+    "chatlists",
+    "communities",
+    "contacts",
+    "ephemeral",
+    "folders",
+    "fragment",
+    "help",
+    "langpack",
+    "messages",
+    "payments",
+    "phone",
+    "photos",
+    "premium",
+    "smsjobs",
+    "stats",
+    "stickers",
+    "storage",
+    "stories",
+    "updates",
+    "upload",
+    "users",
+];
 
 impl Default for BuildConfig {
     fn default() -> Self {
@@ -36,6 +67,10 @@ impl Default for BuildConfig {
             session_document: false,
             session_file: false,
             tdlib_compat: false,
+            api_namespaces: API_NAMESPACES
+                .iter()
+                .map(|namespace| (*namespace, None))
+                .collect(),
         }
     }
 }
@@ -101,52 +136,40 @@ fn run() -> Result<ExitCode, Box<dyn std::error::Error>> {
     })
 }
 
-fn selected_features(config: &BuildConfig) -> Vec<&'static str> {
-    let mut features = Vec::with_capacity(10);
+fn selected_features(config: &BuildConfig) -> Vec<String> {
+    let mut features = Vec::with_capacity(16);
     let prefix = if config.package == "trlib-core" {
         ""
     } else {
         "trlib-core/"
     };
-    let mut add = |enabled: bool, name: &'static str, qualified: &'static str| {
+    let mut add = |enabled: bool, name: &str| {
         if enabled {
-            features.push(if prefix.is_empty() { name } else { qualified });
+            features.push(format!("{prefix}{name}"));
         }
     };
-    add(config.std, "std", "trlib-core/std");
-    add(config.service, "service", "trlib-core/service");
-    add(
-        config.transport_abridged,
-        "transport-abridged",
-        "trlib-core/transport-abridged",
-    );
-    add(
-        config.transport_intermediate,
-        "transport-intermediate",
-        "trlib-core/transport-intermediate",
-    );
-    add(
-        config.crypto_rustcrypto,
-        "crypto-rustcrypto",
-        "trlib-core/crypto-rustcrypto",
-    );
-    add(config.api, "api", "trlib-core/api");
-    add(config.auth, "auth", "trlib-core/auth");
-    add(
-        config.session_document,
-        "session-document",
-        "trlib-core/session-document",
-    );
-    add(
-        config.session_file,
-        "session-file",
-        "trlib-core/session-file",
-    );
-    add(
-        config.tdlib_compat,
-        "tdlib-compat",
-        "trlib-core/tdlib-compat",
-    );
+    add(config.std, "std");
+    add(config.service, "service");
+    add(config.transport_abridged, "transport-abridged");
+    add(config.transport_intermediate, "transport-intermediate");
+    add(config.crypto_rustcrypto, "crypto-rustcrypto");
+    let overridden = config
+        .api_namespaces
+        .iter()
+        .any(|(_, enabled)| enabled.is_some());
+    if config.api && !overridden {
+        add(true, "api");
+    } else {
+        for (namespace, enabled) in &config.api_namespaces {
+            if enabled.unwrap_or(config.api) {
+                add(true, &format!("api-{namespace}"));
+            }
+        }
+    }
+    add(config.auth, "auth");
+    add(config.session_document, "session-document");
+    add(config.session_file, "session-file");
+    add(config.tdlib_compat, "tdlib-compat");
     features
 }
 
@@ -187,7 +210,22 @@ fn parse_config(text: &str) -> Result<BuildConfig, Box<dyn std::error::Error>> {
             "session_document" => config.session_document = parse_bool(value, line_number)?,
             "session_file" => config.session_file = parse_bool(value, line_number)?,
             "tdlib_compat" => config.tdlib_compat = parse_bool(value, line_number)?,
-            _ => return Err(format!("line {line_number}: unknown key {key:?}").into()),
+            _ => {
+                let namespace = key.strip_prefix("api_");
+                let Some(namespace) = namespace else {
+                    return Err(format!("line {line_number}: unknown key {key:?}").into());
+                };
+                let Some((_, slot)) = config
+                    .api_namespaces
+                    .iter_mut()
+                    .find(|(candidate, _)| *candidate == namespace)
+                else {
+                    return Err(
+                        format!("line {line_number}: unknown api namespace {namespace:?}").into(),
+                    );
+                };
+                *slot = Some(parse_bool(value, line_number)?);
+            }
         }
     }
     Ok(config)
@@ -216,9 +254,31 @@ mod tests {
     }
 
     #[test]
+    fn api_namespace_can_be_disabled_or_enabled_alone() {
+        let config = parse_config("api = true\napi_payments = false\n").expect("parse");
+        let features = selected_features(&config);
+        assert!(features.contains(&"api-messages".into()));
+        assert!(!features.contains(&"api-payments".into()));
+        assert!(!features.contains(&"api".into()));
+
+        let alone = parse_config("api = false\napi_payments = true\n").expect("parse alone");
+        let features = selected_features(&alone);
+        assert_eq!(
+            features,
+            ["service", "transport-intermediate", "api-payments"]
+        );
+    }
+
+    #[test]
+    fn api_meta_is_used_when_no_namespace_is_overridden() {
+        let config = parse_config("api = true\n").expect("parse");
+        assert!(selected_features(&config).contains(&"api".into()));
+    }
+
+    #[test]
     fn tdlib_compatibility_is_strictly_opt_in() {
         let disabled = parse_config("tdlib_compat = false\n").expect("parse disabled");
-        assert!(!selected_features(&disabled).contains(&"tdlib-compat"));
+        assert!(!selected_features(&disabled).contains(&"tdlib-compat".into()));
 
         let enabled = parse_config("tdlib_compat = true\n").expect("parse enabled");
         assert_eq!(

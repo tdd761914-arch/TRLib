@@ -15,9 +15,10 @@ TL-парсинг, ограниченная память и контроль р�
   envelopes. Ядро не владеет ни сокетом, ни receive-buffer.
 - Опциональная MTProto 2.0 crypto: AES-256-IGE/SHA-256 и шифрование готового
   исходящего пакета непосредственно в final buffer.
-- Потоковый prefix-генератор и малый API-subset из
-  [`TGScheme/Schema`](https://github.com/TGScheme/Schema), зафиксированный на
-  `5e961c4673acfc5b921dd18ffdd5a02eda0e8143` (Layer 229).
+- Потоковый генератор полной vendored Telegram API-схемы из
+  [`TGScheme/Schema`](https://github.com/TGScheme/Schema), зафиксированной на
+  `5e961c4673acfc5b921dd18ffdd5a02eda0e8143` (Layer 229), с отдельными
+  Cargo-фичами по namespace.
 - Feature-gated writers и zero-copy views для phone-code login, account/update
   state, history, простых text messages и raw вызова любого метода схемы.
 - Лёгкий зашифрованный текстовый документ сессии вместо SQLite.
@@ -74,7 +75,7 @@ cargo run --locked -p trlib-build -- --config trlib.conf
 | `auth` | code-login writers и login response parsers | включает `api` |
 | `session_document` | AES-CTR + HMAC текстовая сессия | включает crypto |
 | `session_file` | blocking `std::fs` helpers | включает документ + `std` |
-| `tdlib_compat` | TDLib-shaped JSON request/event adapter | включает `std`, API, auth и session file |
+| `tdlib_compat` | TDLib-shaped JSON request/event adapter | включает `std`, auth, messages и session file; лишние API namespace остаются выключены |
 
 Для нативного малого update gateway последние пять ключей остаются `false`.
 Для миграционной сборки достаточно одного включателя:
@@ -161,10 +162,9 @@ tag=…HMAC-SHA-256 in lowercase hex…
 результат `SessionRecordRef` заимствует 256-byte MTProto auth key из
 decrypted scratch. Нет SQLite, allocator или framework сериализации.
 
-Для пароля доступен PBKDF2-HMAC-SHA-256 `SessionKey`; для сервисов лучше
-сначала прочитать публичный salt через `document_salt`, затем вывести
-`SessionKey` с PBKDF2-HMAC-SHA-256. Для сервисов лучше случайный 32-byte
-secret из platform key store. `session_file` добавляет
+Для пароля доступен PBKDF2-HMAC-SHA-256 `SessionKey`: сначала прочитайте
+публичный salt через `document_salt`, затем выведите ключ. Для сервисов лучше
+использовать случайный 32-byte secret из platform key store. `session_file` добавляет
 blocking `save`/`load`; владелец приложения отвечает за private directory,
 atomic replace и lock при нескольких writers.
 
@@ -178,12 +178,28 @@ atomic replace и lock при нескольких writers.
 - `checkAuthenticationCode`
 - `registerUser`
 - `getMe`
-- `sendMessage` и `getChatHistory` с явным `trlib_peer`
+- `sendMessage`, `sendMessageToChat` (расширение TRLib), `getChatHistory`, `getChat`, `getUser`,
+  `getMessages`, `deleteMessages`, `readHistory` и `editMessageText`
 
 Adapter выдаёт TDLib-shaped `updateAuthorizationState` и `error` JSON. Он
 отклоняет JSON string с escape-последовательностями, чтобы значения оставались
-borrowed. Также он не резолвит TDLib `chat_id`: это потребовало бы именно тот
-тяжёлый entity cache, который TRLib исключает. Используйте peer extension:
+borrowed. Стандартные `chat_id` разрешаются через bounded `EntityCache`, который
+заполняет host. Обычная форма TDLib принимается; при записи host передаёт
+MTProto random id:
+
+```json
+{
+  "@type": "sendMessage",
+  "chat_id": 123,
+  "options": { "@type": "messageSendOptions", "disable_notification": true },
+  "input_message_content": {
+    "@type": "inputMessageText",
+    "text": { "@type": "formattedText", "text": "hello", "entities": [] }
+  }
+}
+```
+
+Без bounded cache можно использовать `trlib_peer` extension:
 
 ```json
 {
@@ -204,25 +220,53 @@ borrowed. Также он не резолвит TDLib `chat_id`: это потр
 Это даёт использующим названия и authorization states TDLib клиентам путь
 миграции, при этом compatibility код полностью отсутствует в native build.
 
+### Сравнение API TDLib и `tdlib_compat`
+
+Адаптер — небольшой переводчик команд, а не замена асинхронного клиента и
+базы TDLib. Официальный API TDLib намного шире; граница поддерживаемого входа:
+
+| JSON API TDLib | Контракт обычного TDLib | Статус в `tdlib_compat` |
+|---|---|---|
+| `setTdlibParameters` | 14 полей инициализации, БД и test DC | Вход совместим: стандартные поля разбираются и доступны host; TRLib не открывает TDLib БД и не выбирает DC |
+| `setAuthenticationPhoneNumber` | телефон + optional authentication settings | Вход совместим частично: settings разбираются, Firebase/tokens игнорируются |
+| `checkAuthenticationCode` | code-driven auth state machine | Поддержан phone-code flow; host хранит phone/hash |
+| `registerUser` | имя, фамилия, `disable_notification` | Поддержаны все эти поля |
+| `getMe` | возвращает cached `user` | Совместим вход: пишется MTProto `users.getFullUser`, ответ разбирает host |
+| `sendMessage` | `chat_id`, topic/reply, options, markup, любой content | Text subset: стандартные `chat_id`, вложенные options/reply; нужен cache и host `random_id`; нет media/topic/markup |
+| `getChatHistory` | `chat_id`, `from_message_id`, offset, limit, `only_local` | Network subset: все поля разбираются; `chat_id` требует `EntityCache`, `only_local=true` отклоняется |
+| `getChat`, `getUser` | offline cache-backed `chat`/`user` | Совместимый translator: пишет MTProto lookup, host разбирает ответ и держит cache |
+| `getMessages`, `deleteMessages` | int53 chat/message IDs и result objects | Совместимы для Telegram int32 IDs (до 16); результат обрабатывает host |
+| `editMessageText` | reply markup + `inputMessageContent` | Text subset: стандартные IDs и `inputMessageText`, без markup |
+| `readHistory` | в актуальном TDLib нет прямого 1:1 метода | Расширение TRLib для MTProto `messages.readHistory` |
+| updates, results, `@extra`, `td_send`/`td_receive` | асинхронные ответы и ordered cache updates | У host: TRLib не даёт TDLib runtime или JSON result dispatcher |
+
+Для минимальной миграции сохраните имена методов и authorization-state events,
+заполняйте `EntityCache` из update-обработчика и вызывайте
+`write_request_with_random_id` для стандартного `sendMessage`. Клиентам,
+которые используют локальную TDLib БД, media constructors, email/QR/passkey
+login или `@extra`, нужен дополнительный compatibility layer.
+См. [официальный контракт TDLib](https://core.telegram.org/tdlib/getting-started)
+и [актуальный индекс классов](https://core.telegram.org/tdlib/docs/classes.html).
+
 ## Потоковая генерация схемы
 
-Генератор читает TL-схему построчно и пишет только constructor ID. Он не
-создаёт in-memory AST или runtime reflection table:
+Генератор читает TL-схему построчно и пишет constructor ID вместе со статическими
+metadata полей и flags. Он не создаёт in-memory AST и не парсит TL в runtime:
 
 ```bash
 cargo run --locked -p tl-prefix-gen -- \
   --output crates/trlib-core/src/generated.rs \
-  schemas/core.tl schemas/tg_api_subset.tl
+  schemas/core.tl schemas/telegram_api.tl
 scripts/check-generated.sh
 ```
 
-`schemas/tg_api_subset.tl` хранит точную upstream revision. Добавляйте только
-необходимые конкретной сборке конструкторы, генерируйте снова и не включайте
-ненужные API field/parser в feature set.
+`schemas/telegram_api.tl` хранит точную upstream revision. Генератор один раз
+создаёт полные metadata, а конкретная сборка исключает ненужные namespace через
+фичи `api-<namespace>`.
 
 ## Бенчмарки
 
-Измерено **2026-08-06** на Linux `6.17.0-PRoot-Distro` aarch64, Rust `1.93.1`.
+Измерено **2026-08-07** на Linux `6.17.0-PRoot-Distro` aarch64, Rust `1.93.1`.
 Профиль: `opt-level = "z"`, fat LTO, один codegen unit, `panic = "abort"`,
 stripped symbols. Это измерения, а не SLA.
 
@@ -234,9 +278,9 @@ stripped symbols. Это измерения, а не SLA.
 
 | Linked probe | ELF file | `.text + .data + .bss` | Разница от core |
 |---|---:|---:|---:|
-| intermediate core | 332,496 B | 299,566 B | baseline |
-| core + MTProto crypto | 332,496 B | 322,494 B | +22,928 B |
-| core + TDLib adapter/session path | 332,496 B | 329,222 B | +29,656 B |
+| intermediate core | 332,496 B | 299,582 B | baseline |
+| core + MTProto crypto | 332,496 B | 322,510 B | +22,928 B |
+| core + TDLib adapter/session path | 1,184,464 B | 1,176,142 B | +876,560 B |
 
 Одинаковый размер ELF на диске — эффект выравнивания. `size` показывает
 реальные linked sections. TDLib path opt-in: native build эту разницу не несёт.
@@ -245,11 +289,11 @@ stripped symbols. Это измерения, а не SLA.
 
 Base probe выполняет 10,000,000 вызовов `CoreGateway::poll` над 44-byte
 intermediate frame (framing + plain envelope + TL prefix). Пять запусков:
-`48.551`, `48.718`, `49.011`, `49.262`, `49.313 ns/frame`.
+`49.005`, `48.996`, `48.664`, `48.690`, `48.618 ns/frame`.
 
 | Метрика | Результат |
 |---|---:|
-| median | 49.011 ns/frame |
+| median | 48.690 ns/frame |
 | расчётная пропускная способность одного ядра | 20.4 M frames/s |
 
 Фиксированное состояние на 64-bit target: `Error` 12 B, `GatewayConfig` 16 B,
@@ -267,7 +311,7 @@ cargo run --locked --release -p tg-test-dc -- \
   --rounds 10 --timeout-ms 8000 --json
 ```
 
-Фактический запуск против `149.154.167.40:80`:
+Фактический запуск 2026-08-06 против `149.154.167.40:80`:
 
 | Метрика, 10 новых соединений | Результат |
 |---|---:|

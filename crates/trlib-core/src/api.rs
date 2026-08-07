@@ -1,37 +1,44 @@
-//! Selected, allocation-free Telegram API bindings.
+//! Allocation-free Telegram API bindings and direct convenience writers.
 //!
-//! The module is generated from a deliberately small subset of
-//! `TGScheme/Schema` and always leaves unknown objects as borrowed
-//! [`RawObject`] values.  Applications can invoke any schema method through
-//! [`RawMethod`], while the high-frequency login, account and text-message
-//! calls below have direct writers.
+//! The constructor metadata is generated from the vendored full
+//! `TGScheme/Schema` snapshot. Applications can invoke any enabled schema
+//! method through [`RawMethod`], while the high-frequency login, account and
+//! text-message calls below have direct writers.
 
 use crate::error::Result;
 #[cfg(feature = "auth")]
 use crate::error::{Error, ErrorKind, narrow};
+#[cfg(feature = "api-users")]
+use crate::generated::USERS_GET_FULL_USER;
 #[cfg(feature = "auth")]
 use crate::generated::{
     ACCOUNT_GET_PASSWORD, AUTH_AUTHORIZATION, AUTH_AUTHORIZATION_SIGN_UP_REQUIRED,
-    AUTH_CHECK_PASSWORD, AUTH_CODE_TYPE_CALL, AUTH_CODE_TYPE_FIREBASE_SMS,
-    AUTH_CODE_TYPE_FLASH_CALL, AUTH_CODE_TYPE_FRAGMENT_SMS, AUTH_CODE_TYPE_MISSED_CALL,
-    AUTH_CODE_TYPE_SMS, AUTH_LOG_OUT, AUTH_SEND_CODE, AUTH_SENT_CODE,
-    AUTH_SENT_CODE_PAYMENT_REQUIRED, AUTH_SENT_CODE_SUCCESS, AUTH_SENT_CODE_TYPE_APP,
-    AUTH_SENT_CODE_TYPE_CALL, AUTH_SENT_CODE_TYPE_EMAIL_CODE, AUTH_SENT_CODE_TYPE_FIREBASE_SMS,
-    AUTH_SENT_CODE_TYPE_FLASH_CALL, AUTH_SENT_CODE_TYPE_FRAGMENT_SMS,
-    AUTH_SENT_CODE_TYPE_MISSED_CALL, AUTH_SENT_CODE_TYPE_SET_UP_EMAIL_REQUIRED,
-    AUTH_SENT_CODE_TYPE_SMS, AUTH_SENT_CODE_TYPE_SMS_PHRASE, AUTH_SENT_CODE_TYPE_SMS_WORD,
-    AUTH_SIGN_IN, AUTH_SIGN_UP, CODE_SETTINGS, INPUT_CHECK_PASSWORD_SRP,
+    AUTH_CHECK_PASSWORD, AUTH_CODE_TYPE_CALL, AUTH_CODE_TYPE_FLASH_CALL,
+    AUTH_CODE_TYPE_FRAGMENT_SMS, AUTH_CODE_TYPE_MISSED_CALL, AUTH_CODE_TYPE_SMS, AUTH_LOG_OUT,
+    AUTH_SEND_CODE, AUTH_SENT_CODE, AUTH_SENT_CODE_PAYMENT_REQUIRED, AUTH_SENT_CODE_SUCCESS,
+    AUTH_SENT_CODE_TYPE_APP, AUTH_SENT_CODE_TYPE_CALL, AUTH_SENT_CODE_TYPE_EMAIL_CODE,
+    AUTH_SENT_CODE_TYPE_FIREBASE_SMS, AUTH_SENT_CODE_TYPE_FLASH_CALL,
+    AUTH_SENT_CODE_TYPE_FRAGMENT_SMS, AUTH_SENT_CODE_TYPE_MISSED_CALL,
+    AUTH_SENT_CODE_TYPE_SET_UP_EMAIL_REQUIRED, AUTH_SENT_CODE_TYPE_SMS,
+    AUTH_SENT_CODE_TYPE_SMS_PHRASE, AUTH_SENT_CODE_TYPE_SMS_WORD, AUTH_SIGN_IN, AUTH_SIGN_UP,
+    CODE_SETTINGS, INPUT_CHECK_PASSWORD_SRP,
 };
 use crate::generated::{
-    INIT_CONNECTION, INPUT_PEER_CHANNEL, INPUT_PEER_SELF, INPUT_PEER_USER, INPUT_USER_SELF,
-    INVOKE_AFTER_MSG, INVOKE_WITH_LAYER, INVOKE_WITHOUT_UPDATES, MESSAGES_GET_HISTORY,
-    MESSAGES_SEND_MESSAGE, RPC_ERROR, UPDATES_GET_STATE, UPDATES_STATE, USERS_GET_FULL_USER,
+    INIT_CONNECTION, INPUT_PEER_CHANNEL, INPUT_PEER_CHAT, INPUT_PEER_SELF, INPUT_PEER_USER,
+    INPUT_USER_SELF, INVOKE_AFTER_MSG, INVOKE_WITH_LAYER, INVOKE_WITHOUT_UPDATES, RPC_ERROR,
 };
-use crate::tl::{ConstructorId, Cursor, TlString, Writer};
+#[cfg(feature = "api-messages")]
+use crate::generated::{
+    INPUT_MESSAGE_ID, INPUT_REPLY_TO_MESSAGE, MESSAGES_DELETE_MESSAGES, MESSAGES_EDIT_MESSAGE,
+    MESSAGES_GET_HISTORY, MESSAGES_GET_MESSAGES, MESSAGES_READ_HISTORY, MESSAGES_SEND_MESSAGE,
+};
+#[cfg(feature = "api-updates")]
+use crate::generated::{UPDATES_GET_STATE, UPDATES_STATE};
+use crate::tl::{ConstructorId, Cursor, TlString, VECTOR, Writer};
 #[cfg(feature = "auth")]
 use crate::tl::{RawObject, TlBytes};
 
-/// Telegram API layer represented by the vendored schema subset.
+/// Telegram API layer represented by the vendored schema snapshot.
 pub const TELEGRAM_API_LAYER: i32 = 229;
 
 /// Pinned upstream schema revision used to select the bindings.
@@ -49,18 +56,42 @@ pub struct KnownMethod {
 
 /// Directly supported typed methods.
 pub const KNOWN_METHODS: &[KnownMethod] = &[
+    #[cfg(feature = "api-users")]
     KnownMethod {
         id: USERS_GET_FULL_USER,
         name: "users.getFullUser",
     },
+    #[cfg(feature = "api-messages")]
     KnownMethod {
         id: MESSAGES_GET_HISTORY,
         name: "messages.getHistory",
     },
+    #[cfg(feature = "api-messages")]
+    KnownMethod {
+        id: MESSAGES_GET_MESSAGES,
+        name: "messages.getMessages",
+    },
+    #[cfg(feature = "api-messages")]
+    KnownMethod {
+        id: MESSAGES_READ_HISTORY,
+        name: "messages.readHistory",
+    },
+    #[cfg(feature = "api-messages")]
+    KnownMethod {
+        id: MESSAGES_DELETE_MESSAGES,
+        name: "messages.deleteMessages",
+    },
+    #[cfg(feature = "api-messages")]
+    KnownMethod {
+        id: MESSAGES_EDIT_MESSAGE,
+        name: "messages.editMessage",
+    },
+    #[cfg(feature = "api-messages")]
     KnownMethod {
         id: MESSAGES_SEND_MESSAGE,
         name: "messages.sendMessage",
     },
+    #[cfg(feature = "api-updates")]
     KnownMethod {
         id: UPDATES_GET_STATE,
         name: "updates.getState",
@@ -177,6 +208,7 @@ impl<'a> RawMethod<'a> {
 }
 
 /// An `InputPeer` accepted by the direct history and text-message writers.
+#[cfg(feature = "api-messages")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum InputPeer {
     /// The authenticated account itself.
@@ -195,8 +227,62 @@ pub enum InputPeer {
         /// Server-provided access hash.
         access_hash: i64,
     },
+    /// A basic group addressed by identifier only.
+    Chat {
+        /// Basic group identifier.
+        chat_id: i64,
+    },
 }
 
+#[cfg(feature = "api-messages")]
+impl From<crate::tl::schema::Peer> for InputPeer {
+    fn from(peer: crate::tl::schema::Peer) -> Self {
+        match peer {
+            crate::tl::schema::Peer::Self_ => Self::SelfPeer,
+            crate::tl::schema::Peer::User {
+                user_id,
+                access_hash,
+            } => Self::User {
+                user_id,
+                access_hash,
+            },
+            crate::tl::schema::Peer::Channel {
+                channel_id,
+                access_hash,
+            } => Self::Channel {
+                channel_id,
+                access_hash,
+            },
+            crate::tl::schema::Peer::Chat { chat_id } => Self::Chat { chat_id },
+        }
+    }
+}
+
+#[cfg(feature = "api-messages")]
+impl From<InputPeer> for crate::tl::schema::Peer {
+    fn from(peer: InputPeer) -> Self {
+        match peer {
+            InputPeer::SelfPeer => Self::Self_,
+            InputPeer::User {
+                user_id,
+                access_hash,
+            } => Self::User {
+                user_id,
+                access_hash,
+            },
+            InputPeer::Channel {
+                channel_id,
+                access_hash,
+            } => Self::Channel {
+                channel_id,
+                access_hash,
+            },
+            InputPeer::Chat { chat_id } => Self::Chat { chat_id },
+        }
+    }
+}
+
+#[cfg(feature = "api-messages")]
 impl InputPeer {
     /// Writes the boxed `InputPeer` directly into a TL writer.
     pub fn write(self, writer: &mut Writer<'_>) -> Result<()> {
@@ -218,8 +304,241 @@ impl InputPeer {
                 writer.write_i64(channel_id)?;
                 writer.write_i64(access_hash)
             }
+            Self::Chat { chat_id } => {
+                writer.write_constructor(INPUT_PEER_CHAT)?;
+                writer.write_i64(chat_id)
+            }
         }
     }
+}
+
+/// Writes `users.getFullUser(inputUserSelf)` for a `getMe`-style operation.
+#[cfg(feature = "api-users")]
+#[inline]
+pub fn write_get_me(writer: &mut Writer<'_>) -> Result<()> {
+    writer.write_constructor(USERS_GET_FULL_USER)?;
+    writer.write_constructor(INPUT_USER_SELF)
+}
+
+/// Writes `updates.getState`.
+#[cfg(feature = "api-updates")]
+#[inline]
+pub fn write_updates_get_state(writer: &mut Writer<'_>) -> Result<()> {
+    writer.write_constructor(UPDATES_GET_STATE)
+}
+
+/// Writes `messages.getHistory` with a direct `InputPeer`.
+#[cfg(feature = "api-messages")]
+#[allow(clippy::too_many_arguments)]
+pub fn write_get_history(
+    writer: &mut Writer<'_>,
+    peer: InputPeer,
+    offset_id: i32,
+    offset_date: i32,
+    add_offset: i32,
+    limit: i32,
+    max_id: i32,
+    min_id: i32,
+    hash: i64,
+) -> Result<()> {
+    writer.write_constructor(MESSAGES_GET_HISTORY)?;
+    peer.write(writer)?;
+    writer.write_i32(offset_id)?;
+    writer.write_i32(offset_date)?;
+    writer.write_i32(add_offset)?;
+    writer.write_i32(limit)?;
+    writer.write_i32(max_id)?;
+    writer.write_i32(min_id)?;
+    writer.write_i64(hash)
+}
+
+/// Writes `messages.getMessages` for a list of message identifiers.
+///
+/// Each identifier is boxed as `inputMessageID`, so no chat identifier is
+/// required; the server resolves the target from the message ids themselves.
+#[cfg(feature = "api-messages")]
+pub fn write_get_messages(writer: &mut Writer<'_>, ids: &[i32]) -> Result<()> {
+    writer.write_constructor(MESSAGES_GET_MESSAGES)?;
+    writer.write_constructor(VECTOR)?;
+    writer.write_i32(ids.len() as i32)?;
+    for id in ids {
+        writer.write_constructor(INPUT_MESSAGE_ID)?;
+        writer.write_i32(*id)?;
+    }
+    Ok(())
+}
+
+/// Writes `messages.readHistory`, marking every message up to `max_id` read.
+#[cfg(feature = "api-messages")]
+pub fn write_read_history(writer: &mut Writer<'_>, peer: InputPeer, max_id: i32) -> Result<()> {
+    writer.write_constructor(MESSAGES_READ_HISTORY)?;
+    peer.write(writer)?;
+    writer.write_i32(max_id)
+}
+
+/// Writes `messages.deleteMessages` for a list of message identifiers.
+///
+/// `revoke` controls the `revoke` flag: true deletes for both sides where
+/// Telegram permits it, false removes the messages only for the account.
+#[cfg(feature = "api-messages")]
+pub fn write_delete_messages(writer: &mut Writer<'_>, ids: &[i32], revoke: bool) -> Result<()> {
+    writer.write_constructor(MESSAGES_DELETE_MESSAGES)?;
+    writer.write_u32(u32::from(revoke))?;
+    writer.write_constructor(VECTOR)?;
+    writer.write_i32(ids.len() as i32)?;
+    for id in ids {
+        writer.write_i32(*id)?;
+    }
+    Ok(())
+}
+
+/// Writes `messages.editMessage` replacing the message text.
+#[cfg(feature = "api-messages")]
+pub fn write_edit_message_text(
+    writer: &mut Writer<'_>,
+    peer: InputPeer,
+    message_id: i32,
+    text: &str,
+    no_webpage: bool,
+    invert_media: bool,
+) -> Result<()> {
+    let mut flags = 1u32 << 11;
+    if no_webpage {
+        flags |= 1 << 1;
+    }
+    if invert_media {
+        flags |= 1 << 16;
+    }
+    writer.write_constructor(MESSAGES_EDIT_MESSAGE)?;
+    writer.write_u32(flags)?;
+    peer.write(writer)?;
+    writer.write_i32(message_id)?;
+    writer.write_string(text)
+}
+
+/// Boolean-only `messages.sendMessage` flags that have no trailing payload.
+#[cfg(feature = "api-messages")]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct SendMessageOptions(u32);
+
+#[cfg(feature = "api-messages")]
+impl SendMessageOptions {
+    /// No optional behavior.
+    pub const EMPTY: Self = Self(0);
+
+    /// Disables web-page previews.
+    #[must_use]
+    pub const fn no_webpage(self) -> Self {
+        Self(self.0 | (1 << 1))
+    }
+
+    /// Sends silently.
+    #[must_use]
+    pub const fn silent(self) -> Self {
+        Self(self.0 | (1 << 5))
+    }
+
+    /// Sends in the background.
+    #[must_use]
+    pub const fn background(self) -> Self {
+        Self(self.0 | (1 << 6))
+    }
+
+    /// Clears the server-side draft.
+    #[must_use]
+    pub const fn clear_draft(self) -> Self {
+        Self(self.0 | (1 << 7))
+    }
+
+    /// Prevents forwarding when Telegram permits it.
+    #[must_use]
+    pub const fn noforwards(self) -> Self {
+        Self(self.0 | (1 << 14))
+    }
+
+    /// Protects the message content from forwarding when Telegram permits it.
+    #[must_use]
+    pub const fn protect_content(self) -> Self {
+        self.noforwards()
+    }
+
+    /// Requests sticker-set-order synchronization.
+    #[must_use]
+    pub const fn update_stickersets_order(self) -> Self {
+        Self(self.0 | (1 << 15))
+    }
+
+    /// Mirrors TDLib's `update_order_of_installed_sticker_sets` option.
+    #[must_use]
+    pub const fn update_sticker_order(self) -> Self {
+        self.update_stickersets_order()
+    }
+
+    /// Inverts attached media order when Telegram permits it.
+    #[must_use]
+    pub const fn invert_media(self) -> Self {
+        Self(self.0 | (1 << 16))
+    }
+
+    /// Allows a paid floodskip when Telegram permits it.
+    #[must_use]
+    pub const fn allow_paid_floodskip(self) -> Self {
+        Self(self.0 | (1 << 19))
+    }
+
+    /// Allows a paid broadcast when Telegram permits it.
+    #[must_use]
+    pub const fn allow_paid_broadcast(self) -> Self {
+        self.allow_paid_floodskip()
+    }
+}
+
+/// Writes `messages.sendMessage` without extra payloads.
+///
+/// Replies, entities, paid stars and other payload-bearing optional fields are
+/// available through [`write_send_text_reply`] or [`RawMethod`]; accepting only
+/// flags that require no extra serialized objects makes it impossible to emit
+/// an invalid flag/body pair.
+#[cfg(feature = "api-messages")]
+pub fn write_send_text(
+    writer: &mut Writer<'_>,
+    peer: InputPeer,
+    text: &str,
+    random_id: i64,
+    options: SendMessageOptions,
+) -> Result<()> {
+    write_send_text_reply(writer, peer, text, random_id, options, None)
+}
+
+/// Writes `messages.sendMessage` with an optional reply.
+///
+/// `reply_to_message_id` selects `inputReplyToMessage` in the `reply_to` field;
+/// the flags bit is set exactly when the reply object is written.
+#[cfg(feature = "api-messages")]
+pub fn write_send_text_reply(
+    writer: &mut Writer<'_>,
+    peer: InputPeer,
+    text: &str,
+    random_id: i64,
+    options: SendMessageOptions,
+    reply_to_message_id: Option<i32>,
+) -> Result<()> {
+    let mut flags = options.0;
+    writer.write_constructor(MESSAGES_SEND_MESSAGE)?;
+    writer.write_i64(0)?;
+    if reply_to_message_id.is_some() {
+        flags |= 1 << 0;
+    }
+    writer.write_u32(flags)?;
+    peer.write(writer)?;
+    if let Some(reply_to_message_id) = reply_to_message_id {
+        writer.write_constructor(INPUT_REPLY_TO_MESSAGE)?;
+        writer.write_u32(0)?;
+        writer.write_i32(reply_to_message_id)?;
+    }
+    writer.write_string(text)?;
+    writer.write_i64(random_id)
 }
 
 /// Boolean-only `CodeSettings` flags supported without an auxiliary vector.
@@ -330,8 +649,8 @@ pub fn write_send_code(
     settings.write(writer)
 }
 
-/// Writes `auth.signIn` with a phone code.  E-mail verification uses
-/// [`RawMethod`] until a caller opts into a larger selected schema subset.
+/// Writes `auth.signIn` with a phone code. E-mail verification uses
+/// [`RawMethod`] until a caller opts into a typed convenience writer.
 #[cfg(feature = "auth")]
 pub fn write_sign_in(
     writer: &mut Writer<'_>,
@@ -396,121 +715,6 @@ pub fn write_check_password(
 #[inline]
 pub fn write_log_out(writer: &mut Writer<'_>) -> Result<()> {
     writer.write_constructor(AUTH_LOG_OUT)
-}
-
-/// Writes `users.getFullUser(inputUserSelf)` for a `getMe`-style operation.
-#[inline]
-pub fn write_get_me(writer: &mut Writer<'_>) -> Result<()> {
-    writer.write_constructor(USERS_GET_FULL_USER)?;
-    writer.write_constructor(INPUT_USER_SELF)
-}
-
-/// Writes `updates.getState`.
-#[inline]
-pub fn write_updates_get_state(writer: &mut Writer<'_>) -> Result<()> {
-    writer.write_constructor(UPDATES_GET_STATE)
-}
-
-/// Writes `messages.getHistory` with a direct `InputPeer`.
-#[allow(clippy::too_many_arguments)]
-pub fn write_get_history(
-    writer: &mut Writer<'_>,
-    peer: InputPeer,
-    offset_id: i32,
-    offset_date: i32,
-    add_offset: i32,
-    limit: i32,
-    max_id: i32,
-    min_id: i32,
-    hash: i64,
-) -> Result<()> {
-    writer.write_constructor(MESSAGES_GET_HISTORY)?;
-    peer.write(writer)?;
-    writer.write_i32(offset_id)?;
-    writer.write_i32(offset_date)?;
-    writer.write_i32(add_offset)?;
-    writer.write_i32(limit)?;
-    writer.write_i32(max_id)?;
-    writer.write_i32(min_id)?;
-    writer.write_i64(hash)
-}
-
-/// Boolean-only `messages.sendMessage` flags that have no trailing payload.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-#[repr(transparent)]
-pub struct SendMessageOptions(u32);
-
-impl SendMessageOptions {
-    /// No optional behavior.
-    pub const EMPTY: Self = Self(0);
-
-    /// Disables web-page previews.
-    #[must_use]
-    pub const fn no_webpage(self) -> Self {
-        Self(self.0 | (1 << 1))
-    }
-
-    /// Sends silently.
-    #[must_use]
-    pub const fn silent(self) -> Self {
-        Self(self.0 | (1 << 5))
-    }
-
-    /// Sends in the background.
-    #[must_use]
-    pub const fn background(self) -> Self {
-        Self(self.0 | (1 << 6))
-    }
-
-    /// Clears the server-side draft.
-    #[must_use]
-    pub const fn clear_draft(self) -> Self {
-        Self(self.0 | (1 << 7))
-    }
-
-    /// Prevents forwarding when Telegram permits it.
-    #[must_use]
-    pub const fn noforwards(self) -> Self {
-        Self(self.0 | (1 << 14))
-    }
-
-    /// Requests sticker-set-order synchronization.
-    #[must_use]
-    pub const fn update_stickersets_order(self) -> Self {
-        Self(self.0 | (1 << 15))
-    }
-
-    /// Inverts attached media order when Telegram permits it.
-    #[must_use]
-    pub const fn invert_media(self) -> Self {
-        Self(self.0 | (1 << 16))
-    }
-
-    /// Allows a paid floodskip when Telegram permits it.
-    #[must_use]
-    pub const fn allow_paid_floodskip(self) -> Self {
-        Self(self.0 | (1 << 19))
-    }
-}
-
-/// Writes the no-extra-payload subset of `messages.sendMessage`.
-///
-/// Replies, entities, paid stars and other payload-bearing optional fields are
-/// available through [`RawMethod`]; accepting only flags that require no extra
-/// serialized objects makes it impossible to emit an invalid flag/body pair.
-pub fn write_send_text(
-    writer: &mut Writer<'_>,
-    peer: InputPeer,
-    text: &str,
-    random_id: i64,
-    options: SendMessageOptions,
-) -> Result<()> {
-    writer.write_constructor(MESSAGES_SEND_MESSAGE)?;
-    writer.write_i64(0)?;
-    writer.write_u32(options.0)?;
-    peer.write(writer)?;
-    writer.write_string(text)?;
-    writer.write_i64(random_id)
 }
 
 /// Telegram RPC error borrowed directly from a result body.
@@ -708,6 +912,7 @@ pub fn parse_auth_response(input: &[u8]) -> Result<AuthResponse<'_>> {
 }
 
 /// Fixed, borrowed `updates.State` values for update synchronization.
+#[cfg(feature = "api-updates")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(C)]
 pub struct UpdatesState {
@@ -723,6 +928,7 @@ pub struct UpdatesState {
     pub unread_count: i32,
 }
 
+#[cfg(feature = "api-updates")]
 impl UpdatesState {
     /// Parses an exact boxed `updates.state` response.
     pub fn parse(input: &[u8]) -> Result<Self> {
@@ -754,7 +960,6 @@ fn parse_sent_code_after_id<'a>(mut cursor: Cursor<'a>) -> Result<SentCode<'a>> 
                 | AUTH_CODE_TYPE_FLASH_CALL
                 | AUTH_CODE_TYPE_MISSED_CALL
                 | AUTH_CODE_TYPE_FRAGMENT_SMS
-                | AUTH_CODE_TYPE_FIREBASE_SMS
         ) {
             Some(id)
         } else {

@@ -7,5 +7,5 @@ trap 'rm -f "$generated"' EXIT HUP INT TERM
 
 cargo run --quiet --manifest-path "$repo_dir/Cargo.toml" \
   --package tl-prefix-gen -- --output "$generated" \
-  "$repo_dir/schemas/core.tl" "$repo_dir/schemas/tg_api_subset.tl"
+  "$repo_dir/schemas/core.tl" "$repo_dir/schemas/telegram_api.tl"
 diff -u "$repo_dir/crates/trlib-core/src/generated.rs" "$generated"

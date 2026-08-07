@@ -14,12 +14,69 @@ service = []
 transport-abridged = []
 transport-intermediate = []
 crypto-rustcrypto = ["dep:aes", "dep:sha2", "dep:subtle", "dep:zeroize"]
-# Selected Telegram API method bindings and zero-copy result views.  This is
-# deliberately separate from the transport-only core so an update gateway does
-# not pay for client-side request code.
-api = []
-# Phone-code login request/response helpers from the selected API schema.
-auth = ["api"]
+# Telegram API schema bindings.  `api` links the complete vendored schema as a
+# meta feature; trlib-build instead selects individual `api-<namespace>`
+# features so a profile can exclude e.g. `payments.*` entirely.  Each
+# namespace mirrors TDLib's generated `telegram_api_<namespace>` classes.
+api = [
+    "api-common",
+    "api-account",
+    "api-aicompose",
+    "api-auth",
+    "api-bots",
+    "api-channels",
+    "api-chatlists",
+    "api-communities",
+    "api-contacts",
+    "api-ephemeral",
+    "api-folders",
+    "api-fragment",
+    "api-help",
+    "api-langpack",
+    "api-messages",
+    "api-payments",
+    "api-phone",
+    "api-photos",
+    "api-premium",
+    "api-smsjobs",
+    "api-stats",
+    "api-stickers",
+    "api-storage",
+    "api-stories",
+    "api-updates",
+    "api-upload",
+    "api-users",
+]
+api-common = []
+api-account = ["api-common"]
+api-aicompose = ["api-common"]
+api-auth = ["api-common"]
+api-bots = ["api-common"]
+api-channels = ["api-common"]
+api-chatlists = ["api-common"]
+api-communities = ["api-common"]
+api-contacts = ["api-common"]
+api-ephemeral = ["api-common"]
+api-folders = ["api-common"]
+api-fragment = ["api-common"]
+api-help = ["api-common"]
+api-langpack = ["api-common"]
+api-messages = ["api-common"]
+api-payments = ["api-common"]
+api-phone = ["api-common"]
+api-photos = ["api-common"]
+api-premium = ["api-common"]
+api-smsjobs = ["api-common"]
+api-stats = ["api-common"]
+api-stickers = ["api-common"]
+api-storage = ["api-common"]
+api-stories = ["api-common"]
+api-updates = ["api-common"]
+api-upload = ["api-common"]
+api-users = ["api-common"]
+# Phone-code login request/response helpers.  This is a curated convenience
+# feature: it pulls only the namespaces its writers reference.
+auth = ["api-common", "api-auth", "api-account", "api-users", "api-updates"]
 # Encrypted, line-oriented session document codec.  It is no_std and uses the
 # same small AES/SHA-256 primitives as the MTProto session crypto backend.
 session-document = ["crypto-rustcrypto"]
@@ -28,7 +85,9 @@ session-document = ["crypto-rustcrypto"]
 session-file = ["session-document", "std"]
 # A small TDLib-shaped command/event adapter.  It is intentionally optional so
 # native TRLib deployments do not link JSON compatibility code or file I/O.
-tdlib-compat = ["std", "api", "auth", "session-file"]
+# The adapter only emits auth, account/users/update and message methods; do not
+# pull unrelated full-schema namespaces into a TDLib migration binary.
+tdlib-compat = ["std", "auth", "api-messages", "session-file"]
 
 [dependencies]
 aes = { workspace = true, optional = true }
