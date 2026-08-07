@@ -9,6 +9,8 @@
 
 #[cfg(any(feature = "api", feature = "api-common"))]
 pub mod api;
+#[cfg(feature = "auth-key")]
+pub mod auth_key;
 pub mod config;
 #[cfg(feature = "crypto-rustcrypto")]
 pub mod crypto;

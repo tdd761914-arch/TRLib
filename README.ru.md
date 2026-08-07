@@ -15,6 +15,9 @@ TL-парсинг, ограниченная память и контроль р�
   envelopes. Ядро не владеет ни сокетом, ни receive-buffer.
 - Опциональная MTProto 2.0 crypto: AES-256-IGE/SHA-256 и шифрование готового
   исходящего пакета непосредственно в final buffer.
+- Отдельная `auth-key` feature с полным RSA/DH MTProto 2.0 handshake в
+  фиксированной памяти, `no_std` и `no_alloc`. Энтропию и I/O передаёт host
+  через `RandomSource`; эта feature не включает `std`.
 - Потоковый генератор полной vendored Telegram API-схемы из
   [`TGScheme/Schema`](https://github.com/TGScheme/Schema), зафиксированной на
   `5e961c4673acfc5b921dd18ffdd5a02eda0e8143` (Layer 229), с отдельными
@@ -33,12 +36,12 @@ phone-code API-login после того, как MTProto authorization key уж�
 `auth.sendCode`, `auth.signIn`, `auth.signUp`, `account.getPassword` и
 `auth.checkPassword` с предоставленными хостом SRP proof values.
 
-RSA/DH handshake для создания authorization key, вычисление SRP password proof
-на big integer, file locking/atomic rename, media transfer, исполнитель
-DC migration и полный JSON/object/database surface TDLib намеренно не входят
-в малое ядро. Парсер отдаёт `*_MIGRATE_<dc>`, поэтому хост может реализовать
-свою миграционную политику. Так тяжёлые части не маскируются под неполную TDLib
-совместимость и не попадают в hot path.
+Вычисление SRP password proof на big integer, file locking/atomic rename, media
+transfer, исполнитель DC migration и полный JSON/object/database surface TDLib
+намеренно не входят в малое ядро. Парсер отдаёт `*_MIGRATE_<dc>`, поэтому хост
+может реализовать свою миграционную политику. `auth-key` полностью выполняет
+handshake для pinned Test DC RSA key и текущего safe DH prime; для production
+нужно добавить собственные pinned RSA keys.
 
 ## Текстовый конфиг перед сборкой
 
@@ -52,6 +55,7 @@ service = true
 transport_abridged = false
 transport_intermediate = true
 crypto_rustcrypto = false
+auth_key = false
 api = false
 auth = false
 session_document = false
@@ -71,6 +75,7 @@ cargo run --locked -p trlib-build -- --config trlib.conf
 | `transport_abridged` | abridged TCP | нет |
 | `transport_intermediate` | intermediate TCP | нет |
 | `crypto_rustcrypto` | AES-256-IGE, SHA-256, constant-time verify | четыре малых `no_std` RustCrypto crate |
+| `auth_key` | RSA_PAD, факторизация PQ, зашифрованный DH и проверка auth key | добавляет `crypto-bigint` и `sha1`, но остаётся `no_std`/no-alloc |
 | `api` | выбранные non-login API writers/views | нет |
 | `auth` | code-login writers и login response parsers | включает `api` |
 | `session_document` | AES-CTR + HMAC текстовая сессия | включает crypto |
@@ -86,6 +91,18 @@ tdlib_compat = true
 
 Cargo автоматически подтянет его нижние слои. `CompiledFeatures` позволяет
 отдать текущий bitset скомпилированных возможностей в diagnostics/metrics.
+
+Локальный Test DC login probe — отдельный `std` binary. Он читает из stdin API
+ID, API hash, телефон и одноразовый код, создаёт auth key через `auth-key`,
+вызывает `auth.sendCode`/`auth.signIn`, а после успешного входа вызывает
+`users.getFullUser` (`getMe`):
+
+```bash
+cargo run --release -p tg-test-login
+```
+
+Адрес можно переопределить через `TRLIB_TEST_DC`. Authorization key не печатается;
+для файловой сессии используйте `session-file` в embedding-приложении.
 
 ## Zero-copy gateway
 
@@ -321,11 +338,22 @@ cargo run --locked --release -p tg-test-dc -- \
 | проверенных ответов | 10/10 |
 | advertised RSA fingerprints | 3 |
 
+### Smoke авторизационного ключа и login
+
+Новый `auth-key` path проверен против того же Test DC 2026-08-07: RSA/PQ/DH
+обмен дошёл до `dh_gen_ok`, encrypted session приняла серверная сторона, а
+`auth.sendCode` вернул phone-code response. Затем probe останавливается на
+`Login code:`; код не зашит и не выводится TRLib. Запуск с намеренно пустым
+кодом дошёл до ожидаемого Telegram ответа `PHONE_CODE_INVALID`, то есть
+зашифрованный `auth.signIn` path работает. Для полного входа введите реальный
+Test DC код локально; после этого вызывается `getMe`.
+
 ## Безопасность и проверка
 
-Базовый crate не имеет зависимостей. Опциональная MTProto/session crypto
-использует только малые `no_std` RustCrypto crate: `aes`, `sha2`, `subtle`,
-`zeroize`. Нет `serde`, Tokio, SQL engine, TLS stack или async runtime.
+Базовый crate не имеет зависимостей. Опциональные MTProto/session crypto и
+создание authorization key используют малые `no_std` RustCrypto crate: `aes`,
+`sha1`, `sha2`, `crypto-bigint`, `subtle`, `zeroize`. Нет `serde`, Tokio, SQL
+engine, TLS stack или async runtime.
 
 - `unsafe` запрещён на уровне crate.
 - TL length/offset bounds-checked; TL bytes требуют canonical length и нулевой
@@ -336,6 +364,9 @@ cargo run --locked --release -p tg-test-dc -- \
 - MTProto plaintext стирается после неверного `msg_key`; document scratch —
   после failed authentication.
 - Session key, derived document keys, временные tags и AES material zeroize.
+- `auth-key` отклоняет неизвестные RSA fingerprints, проверяет pinned safe DH
+  prime, границы `g_a`/`g_b`, аутентифицирует encrypted DH answer и стирает
+  секреты handshake при `drop`.
 
 Проверки:
 

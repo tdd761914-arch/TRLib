@@ -14,6 +14,9 @@ memory, and feature-level control over binary size — not a full TDLib clone.
   envelope parsing. The core owns neither a socket nor a receive buffer.
 - Optional AES-256-IGE/SHA-256 MTProto 2.0 session crypto, with output packets
   encrypted in place after serialization.
+- Optional `auth-key` feature with a fixed-memory, `no_std`/`no_alloc` RSA/DH
+  MTProto 2.0 authorization-key handshake. Entropy and I/O are supplied by the
+  host through `RandomSource`; `std` is not enabled by this feature.
 - A streaming generator for the vendored full Telegram API schema from
   [`TGScheme/Schema`](https://github.com/TGScheme/Schema), pinned at
   `5e961c4673acfc5b921dd18ffdd5a02eda0e8143` (Layer 229), with per-namespace
@@ -33,13 +36,12 @@ supports API phone-code login once an MTProto authorization key already exists:
 `auth.sendCode`, `auth.signIn`, `auth.signUp`, `account.getPassword`, and
 host-supplied SRP proof values for `auth.checkPassword`.
 
-The RSA/DH authorization-key handshake, SRP big-integer password proof
-calculation, file locking/atomic rename, media transfer, DC migration executor,
-and TDLib's full JSON/object/database surface are intentionally outside this
-small core. The response parser does expose `*_MIGRATE_<dc>` errors so the host
-can implement a migration policy. This split keeps the network hot path small
-and makes the missing heavyweight behavior explicit rather than silently
-approximating TDLib.
+SRP big-integer password proof calculation, file locking/atomic rename, media
+transfer, DC migration executor, and TDLib's full JSON/object/database surface
+are intentionally outside this small core. The response parser does expose
+`*_MIGRATE_<dc>` errors so the host can implement a migration policy. The
+`auth-key` handshake is complete for the pinned Test DC key and current safe
+DH prime; production deployments should pin their own current RSA keys.
 
 ## Build configuration
 
@@ -53,6 +55,7 @@ service = true
 transport_abridged = false
 transport_intermediate = true
 crypto_rustcrypto = false
+auth_key = false
 api = false
 auth = false
 session_document = false
@@ -72,6 +75,7 @@ cargo run --locked -p trlib-build -- --config trlib.conf
 | `transport_abridged` | abridged TCP framing | none |
 | `transport_intermediate` | intermediate TCP framing | none |
 | `crypto_rustcrypto` | AES-256-IGE, SHA-256, constant-time verification | four small `no_std` RustCrypto crates |
+| `auth_key` | RSA_PAD, PQ factorization, encrypted DH and auth-key verification | adds `crypto-bigint` and `sha1`; still `no_std`/no-alloc |
 | `api` | selected non-login Telegram API writers/views | none |
 | `auth` | code-login writers and borrowed login result parsers | enables `api` |
 | `session_document` | AES-CTR + HMAC encrypted session codec | enables crypto |
@@ -87,6 +91,19 @@ tdlib_compat = true
 
 Cargo resolves its required lower layers automatically. `CompiledFeatures` can
 be queried at runtime to report the exact linked feature bitset.
+
+The local Test DC login probe is a separate `std` binary. It reads API ID, API
+hash, phone number and the one-time code from stdin, creates the authorization
+key with `auth-key`, sends `auth.sendCode`/`auth.signIn`, and then calls
+`users.getFullUser` (`getMe`):
+
+```bash
+cargo run --release -p tg-test-login
+```
+
+Set `TRLIB_TEST_DC` to override the Test DC address. The binary does not print
+the authorization key; use `session-file` in an embedding application when a
+file-backed encrypted session is needed.
 
 ## Zero-copy gateway
 
@@ -329,10 +346,21 @@ Actual run recorded on 2026-08-06 against `149.154.167.40:80`:
 | verified responses | 10/10 |
 | advertised RSA fingerprints | 3 |
 
+### Authorization-key/login smoke
+
+The new `auth-key` path was exercised against the same Test DC on 2026-08-07:
+the RSA/PQ/DH exchange reached `dh_gen_ok`, the encrypted session was accepted,
+and `auth.sendCode` returned the server's phone-code response. The probe then
+waits at `Login code:`; the code is never hard-coded or echoed by TRLib. A run
+with an intentionally empty code reached Telegram's expected `PHONE_CODE_INVALID`
+response, confirming the encrypted `auth.signIn` request path. Enter a real
+Test DC code locally to complete login and the follow-up `getMe` call.
+
 ## Security and verification
 
-The base crate has no dependencies. Optional MTProto/session crypto uses only
-small `no_std` RustCrypto crates: `aes`, `sha2`, `subtle`, and `zeroize`.
+The base crate has no dependencies. Optional MTProto/session crypto and
+authorization-key creation use small `no_std` RustCrypto crates: `aes`,
+`sha1`, `sha2`, `crypto-bigint`, `subtle`, and `zeroize`.
 There is no `serde`, Tokio, SQL engine, TLS stack, or async runtime.
 
 - `unsafe` is forbidden at crate level.
@@ -345,6 +373,9 @@ There is no `serde`, Tokio, SQL engine, TLS stack, or async runtime.
   scratch is wiped after failed authentication.
 - The session key, derived document keys, temporary tags, and AES material are
   zeroized.
+- `auth-key` rejects unknown RSA fingerprints, validates the pinned safe DH
+  prime, checks `g_a`/`g_b` bounds, authenticates the encrypted DH answer, and
+  zeroizes handshake secrets on drop.
 
 Run the checks:
 

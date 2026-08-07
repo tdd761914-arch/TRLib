@@ -1,0 +1,14 @@
+[package]
+name = "tg-test-login"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+trlib-core = { path = "../../crates/trlib-core", default-features = false, features = [
+    "auth-key",
+    "auth",
+    "crypto-rustcrypto",
+    "transport-intermediate",
+] }

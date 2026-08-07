@@ -24,17 +24,21 @@ use crate::generated::{
     CODE_SETTINGS, INPUT_CHECK_PASSWORD_SRP,
 };
 use crate::generated::{
-    INIT_CONNECTION, INPUT_PEER_CHANNEL, INPUT_PEER_CHAT, INPUT_PEER_SELF, INPUT_PEER_USER,
-    INPUT_USER_SELF, INVOKE_AFTER_MSG, INVOKE_WITH_LAYER, INVOKE_WITHOUT_UPDATES, RPC_ERROR,
+    INIT_CONNECTION, INPUT_USER_SELF, INVOKE_AFTER_MSG, INVOKE_WITH_LAYER, INVOKE_WITHOUT_UPDATES,
+    RPC_ERROR,
 };
 #[cfg(feature = "api-messages")]
 use crate::generated::{
     INPUT_MESSAGE_ID, INPUT_REPLY_TO_MESSAGE, MESSAGES_DELETE_MESSAGES, MESSAGES_EDIT_MESSAGE,
     MESSAGES_GET_HISTORY, MESSAGES_GET_MESSAGES, MESSAGES_READ_HISTORY, MESSAGES_SEND_MESSAGE,
 };
+#[cfg(feature = "api-messages")]
+use crate::generated::{INPUT_PEER_CHANNEL, INPUT_PEER_CHAT, INPUT_PEER_SELF, INPUT_PEER_USER};
 #[cfg(feature = "api-updates")]
 use crate::generated::{UPDATES_GET_STATE, UPDATES_STATE};
-use crate::tl::{ConstructorId, Cursor, TlString, VECTOR, Writer};
+#[cfg(feature = "api-messages")]
+use crate::tl::VECTOR;
+use crate::tl::{ConstructorId, Cursor, TlString, Writer};
 #[cfg(feature = "auth")]
 use crate::tl::{RawObject, TlBytes};
 
@@ -1146,10 +1150,11 @@ fn parse_positive_i32(input: &str) -> Option<i32> {
 #[cfg(all(test, feature = "auth"))]
 mod tests {
     use super::{
-        ApiContext, AuthResponse, CodeSettings, InputPeer, RpcError, SendMessageOptions,
-        SentCodeDelivery, TELEGRAM_API_LAYER, parse_auth_response, write_init_connection_prefix,
-        write_send_code, write_send_text,
+        ApiContext, AuthResponse, CodeSettings, RpcError, SentCodeDelivery, TELEGRAM_API_LAYER,
+        parse_auth_response, write_init_connection_prefix, write_send_code,
     };
+    #[cfg(feature = "api-messages")]
+    use super::{InputPeer, SendMessageOptions, write_send_text};
     use crate::generated::{AUTH_AUTHORIZATION, AUTH_SENT_CODE, AUTH_SENT_CODE_TYPE_SMS};
     use crate::tl::{Cursor, Writer};
 
@@ -1217,6 +1222,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "api-messages")]
     fn text_message_writer_never_sets_a_payload_flag() {
         let mut storage = [0u8; 128];
         let written = {

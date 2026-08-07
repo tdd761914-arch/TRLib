@@ -212,6 +212,14 @@ fn aes_ige_encrypt(key: &[u8; 32], iv: &[u8; 32], data: &mut [u8]) -> Result<()>
     Ok(())
 }
 
+#[cfg(feature = "auth-key")]
+pub(crate) fn aes_ige_encrypt_raw(key: &[u8; 32], iv: &[u8; 32], data: &mut [u8]) -> Result<()> {
+    if data.len() < 16 || data.len() & 15 != 0 {
+        return Err(Error::new(ErrorKind::InvalidLength, 0, narrow(data.len())));
+    }
+    aes_ige_encrypt(key, iv, data)
+}
+
 fn aes_ige_decrypt(key: &[u8; 32], iv: &[u8; 32], data: &mut [u8]) -> Result<()> {
     let cipher =
         Aes256::new_from_slice(key).map_err(|_| Error::new(ErrorKind::InvalidLength, 0, 32))?;
@@ -240,6 +248,14 @@ fn aes_ige_decrypt(key: &[u8; 32], iv: &[u8; 32], data: &mut [u8]) -> Result<()>
     previous_ciphertext.zeroize();
     previous_plaintext.zeroize();
     Ok(())
+}
+
+#[cfg(feature = "auth-key")]
+pub(crate) fn aes_ige_decrypt_raw(key: &[u8; 32], iv: &[u8; 32], data: &mut [u8]) -> Result<()> {
+    if data.len() < 16 || data.len() & 15 != 0 {
+        return Err(Error::new(ErrorKind::InvalidLength, 0, narrow(data.len())));
+    }
+    aes_ige_decrypt(key, iv, data)
 }
 
 #[cfg(test)]

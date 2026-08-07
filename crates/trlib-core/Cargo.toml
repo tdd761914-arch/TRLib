@@ -14,6 +14,9 @@ service = []
 transport-abridged = []
 transport-intermediate = []
 crypto-rustcrypto = ["dep:aes", "dep:sha2", "dep:subtle", "dep:zeroize"]
+# Allocation-free MTProto RSA/DH authorization-key handshake.  This feature
+# deliberately does not enable `std`; callers provide entropy and I/O.
+auth-key = ["crypto-rustcrypto", "dep:crypto-bigint", "dep:sha1"]
 # Telegram API schema bindings.  `api` links the complete vendored schema as a
 # meta feature; trlib-build instead selects individual `api-<namespace>`
 # features so a profile can exclude e.g. `payments.*` entirely.  Each
@@ -91,6 +94,8 @@ tdlib-compat = ["std", "auth", "api-messages", "session-file"]
 
 [dependencies]
 aes = { workspace = true, optional = true }
+crypto-bigint = { workspace = true, optional = true }
+sha1 = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }
 subtle = { workspace = true, optional = true }
 zeroize = { workspace = true, optional = true }

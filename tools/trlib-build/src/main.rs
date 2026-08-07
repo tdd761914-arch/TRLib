@@ -14,6 +14,7 @@ struct BuildConfig {
     transport_abridged: bool,
     transport_intermediate: bool,
     crypto_rustcrypto: bool,
+    auth_key: bool,
     api: bool,
     auth: bool,
     session_document: bool,
@@ -62,6 +63,7 @@ impl Default for BuildConfig {
             transport_abridged: false,
             transport_intermediate: true,
             crypto_rustcrypto: false,
+            auth_key: false,
             api: false,
             auth: false,
             session_document: false,
@@ -153,6 +155,7 @@ fn selected_features(config: &BuildConfig) -> Vec<String> {
     add(config.transport_abridged, "transport-abridged");
     add(config.transport_intermediate, "transport-intermediate");
     add(config.crypto_rustcrypto, "crypto-rustcrypto");
+    add(config.auth_key, "auth-key");
     let overridden = config
         .api_namespaces
         .iter()
@@ -205,6 +208,7 @@ fn parse_config(text: &str) -> Result<BuildConfig, Box<dyn std::error::Error>> {
                 config.transport_intermediate = parse_bool(value, line_number)?
             }
             "crypto_rustcrypto" => config.crypto_rustcrypto = parse_bool(value, line_number)?,
+            "auth_key" => config.auth_key = parse_bool(value, line_number)?,
             "api" => config.api = parse_bool(value, line_number)?,
             "auth" => config.auth = parse_bool(value, line_number)?,
             "session_document" => config.session_document = parse_bool(value, line_number)?,
