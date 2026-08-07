@@ -25,8 +25,6 @@ memory, and feature-level control over binary size — not a full TDLib clone.
   account state, update state, history, direct text messages, and arbitrary raw
   schema methods.
 - A lightweight encrypted text session document instead of SQLite.
-- An opt-in TDLib-shaped JSON adapter for common login and request flows,
-  without `serde` or TDLib's cache/UI/database stack.
 
 ## Scope and honest boundaries
 
@@ -60,7 +58,6 @@ api = false
 auth = false
 session_document = false
 session_file = false
-tdlib_compat = false
 ```
 
 Build it with:
@@ -80,17 +77,10 @@ cargo run --locked -p trlib-build -- --config trlib.conf
 | `auth` | code-login writers and borrowed login result parsers | enables `api` |
 | `session_document` | AES-CTR + HMAC encrypted session codec | enables crypto |
 | `session_file` | blocking `std::fs` helpers for the text document | enables session document + `std` |
-| `tdlib_compat` | strict TDLib-shaped JSON request/event adapter | enables `std`, auth, messages, and session file; unrelated API namespaces stay off |
 
 For example, a native minimal update gateway leaves the last five flags off.
-A migration build enables only one top-level switch:
-
-```ini
-tdlib_compat = true
-```
-
-Cargo resolves its required lower layers automatically. `CompiledFeatures` can
-be queried at runtime to report the exact linked feature bitset.
+`CompiledFeatures` can be queried at runtime to report the exact linked feature
+bitset.
 
 The local Test DC login probe is a separate `std` binary. It reads API ID, API
 hash, phone number and the one-time code from stdin, creates the authorization
@@ -187,89 +177,6 @@ host key store.
 should keep the parent directory private and use its own atomic-replace/locking
 policy when multiple writers are possible.
 
-## TDLib compatibility switch
-
-`tdlib_compat` is optional. It parses a strict borrowed JSON subset without
-`serde`:
-
-- `setTdlibParameters`
-- `setAuthenticationPhoneNumber`
-- `checkAuthenticationCode`
-- `registerUser`
-- `getMe`
-- `sendMessage`, `sendMessageToChat` (TRLib extension), `getChatHistory`, `getChat`, `getUser`,
-  `getMessages`, `deleteMessages`, `readHistory`, and `editMessageText`
-
-It emits TDLib-shaped `updateAuthorizationState` and `error` JSON. The adapter
-rejects escaped JSON strings because returned values remain borrowed. Standard
-`chat_id` requests resolve through a host-populated bounded `EntityCache`; use
-the explicit `trlib_peer` extension when no cache is available:
-
-The ordinary TDLib shape is accepted (the host supplies the MTProto random id
-when writing it):
-
-```json
-{
-  "@type": "sendMessage",
-  "chat_id": 123,
-  "options": { "@type": "messageSendOptions", "disable_notification": true },
-  "input_message_content": {
-    "@type": "inputMessageText",
-    "text": { "@type": "formattedText", "text": "hello", "entities": [] }
-  }
-}
-```
-
-When no bounded cache is available, use the explicit peer extension instead:
-
-```json
-{
-  "@type": "sendMessage",
-  "trlib_peer": {
-    "@type": "inputPeerUser",
-    "user_id": 123,
-    "access_hash": 456
-  },
-  "input_message_content": {
-    "@type": "inputMessageText",
-    "text": { "text": "hello" }
-  },
-  "random_id": 9001
-}
-```
-
-This gives clients using TDLib naming and authorization states a migration
-path while keeping the compatibility code completely absent from native builds.
-
-### TDLib API comparison
-
-The adapter is a small command translator, not a replacement for TDLib's
-asynchronous client/database contract. The official TDLib API is much wider;
-the table below records the exact migration boundary:
-
-| TDLib JSON API | Standard TDLib contract | `tdlib_compat` status |
-|---|---|---|
-| `setTdlibParameters` | 14 initialization/database/test-DC fields | Input-compatible: all standard fields are parsed and exposed; TRLib does not open TDLib databases or select a DC |
-| `setAuthenticationPhoneNumber` | phone plus optional authentication settings | Input-compatible subset: standard settings are parsed; Firebase/tokens are ignored |
-| `checkAuthenticationCode` | code-driven auth state machine | Supported for phone-code flow; host supplies saved phone/hash |
-| `registerUser` | first name, last name, `disable_notification` | Supported for these fields |
-| `getMe` | returns a cached `user` object | Request-compatible: writes MTProto `users.getFullUser`; host decodes the result |
-| `sendMessage` | `chat_id`, topic/reply, options, markup, arbitrary content | Text subset: standard `chat_id`, nested options and reply are accepted; cache and host-generated `random_id` are required; no media/topic/markup |
-| `getChatHistory` | `chat_id`, `from_message_id`, offset, limit, `only_local` | Network subset: all fields are parsed; `chat_id` needs `EntityCache`, `only_local=true` is rejected |
-| `getChat`, `getUser` | offline cache-backed `chat`/`user` result | Request-compatible translator: emits MTProto lookup; host decodes result and maintains cache |
-| `getMessages`, `deleteMessages` | int53 chat/message IDs and result objects | Request-compatible for Telegram int32 message IDs (max 16); host handles results |
-| `editMessageText` | reply markup plus `inputMessageContent` | Text subset: standard chat/message IDs and `inputMessageText`; no markup |
-| `readHistory` | no current 1:1 TDLib JSON method | TRLib extension for MTProto `messages.readHistory` |
-| updates, results, `@extra`, `td_send`/`td_receive` | asynchronous responses and ordered cache updates | Absent: the host owns correlation, decoding, networking, and scheduling |
-
-For a minimal migration, keep the TDLib method names and authorization-state
-events, populate `EntityCache` from host update handling, and call
-`write_request_with_random_id` for standard `sendMessage`. A client
-that relies on TDLib's local chat/message database, media constructors, email/
-QR/passkey login, or `@extra` correlation still needs a compatibility layer
-above TRLib. See the [TDLib getting-started contract](https://core.telegram.org/tdlib/getting-started)
-and [current class index](https://core.telegram.org/tdlib/docs/classes.html).
-
 ## Streaming schema generation
 
 The generator reads one line at a time and emits constructor IDs plus static
@@ -303,11 +210,10 @@ the size of the `no_std` parser alone.
 |---|---:|---:|---:|
 | intermediate core | 332,496 B | 299,582 B | baseline |
 | core + MTProto crypto | 332,496 B | 322,510 B | +22,928 B |
-| core + TDLib adapter/session path | 1,184,464 B | 1,176,394 B | +876,812 B |
 
 The identical on-disk ELF lengths are alignment artifacts. `size` reports the
-actual linked sections. The TDLib path is intentionally opt-in; a native build
-does not absorb that delta.
+actual linked sections. Optional modules stay out of native builds unless
+their Cargo features are explicitly enabled.
 
 ### Local hot path
 
@@ -385,7 +291,7 @@ cargo test --workspace
 cargo check -p trlib-core --no-default-features
 cargo test -p trlib-core --no-default-features --features api
 cargo test -p trlib-core --no-default-features \
-  --features api,crypto-rustcrypto,session-document,session-file,tdlib-compat
+  --features api,crypto-rustcrypto,session-document,session-file
 scripts/check-generated.sh
 ```
 

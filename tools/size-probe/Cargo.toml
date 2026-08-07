@@ -14,7 +14,6 @@ crypto-rustcrypto = ["trlib-core/crypto-rustcrypto"]
 api = ["trlib-core/api"]
 auth = ["trlib-core/auth"]
 session-document = ["trlib-core/session-document"]
-tdlib-compat = ["trlib-core/tdlib-compat"]
 
 [dependencies]
 trlib-core = { path = "../../crates/trlib-core", default-features = false }

@@ -64,8 +64,6 @@ impl CompiledFeatures {
     pub const SESSION_DOCUMENT: u16 = 1 << 6;
     /// Standard-library session-file helpers are linked.
     pub const SESSION_FILE: u16 = 1 << 7;
-    /// The TDLib-shaped compatibility adapter is linked.
-    pub const TDLIB_COMPAT: u16 = 1 << 8;
 
     /// Returns the feature set selected at compile time.
     pub const fn current() -> Self {
@@ -93,9 +91,6 @@ impl CompiledFeatures {
         }
         if cfg!(feature = "session-file") {
             bits |= Self::SESSION_FILE;
-        }
-        if cfg!(feature = "tdlib-compat") {
-            bits |= Self::TDLIB_COMPAT;
         }
         Self(bits)
     }

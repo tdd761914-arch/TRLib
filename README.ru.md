@@ -25,8 +25,6 @@ TL-парсинг, ограниченная память и контроль р�
 - Feature-gated writers и zero-copy views для phone-code login, account/update
   state, history, простых text messages и raw вызова любого метода схемы.
 - Лёгкий зашифрованный текстовый документ сессии вместо SQLite.
-- Выключаемый TDLib-shaped JSON adapter для частых login/request flow — без
-  `serde`, кэша TDLib, UI-логики и базы данных.
 
 ## Границы реализации
 
@@ -60,7 +58,6 @@ api = false
 auth = false
 session_document = false
 session_file = false
-tdlib_compat = false
 ```
 
 Сборка:
@@ -80,17 +77,10 @@ cargo run --locked -p trlib-build -- --config trlib.conf
 | `auth` | code-login writers и login response parsers | включает `api` |
 | `session_document` | AES-CTR + HMAC текстовая сессия | включает crypto |
 | `session_file` | blocking `std::fs` helpers | включает документ + `std` |
-| `tdlib_compat` | TDLib-shaped JSON request/event adapter | включает `std`, auth, messages и session file; лишние API namespace остаются выключены |
 
 Для нативного малого update gateway последние пять ключей остаются `false`.
-Для миграционной сборки достаточно одного включателя:
-
-```ini
-tdlib_compat = true
-```
-
-Cargo автоматически подтянет его нижние слои. `CompiledFeatures` позволяет
-отдать текущий bitset скомпилированных возможностей в diagnostics/metrics.
+`CompiledFeatures` позволяет отдать текущий bitset скомпилированных
+возможностей в diagnostics/metrics.
 
 Локальный Test DC login probe — отдельный `std` binary. Он читает из stdin API
 ID, API hash, телефон и одноразовый код, создаёт auth key через `auth-key`,
@@ -185,86 +175,6 @@ decrypted scratch. Нет SQLite, allocator или framework сериализа�
 blocking `save`/`load`; владелец приложения отвечает за private directory,
 atomic replace и lock при нескольких writers.
 
-## Выключаемая TDLib compatibility
-
-`tdlib_compat` необязателен. Он разбирает строгий borrowed JSON subset без
-`serde`:
-
-- `setTdlibParameters`
-- `setAuthenticationPhoneNumber`
-- `checkAuthenticationCode`
-- `registerUser`
-- `getMe`
-- `sendMessage`, `sendMessageToChat` (расширение TRLib), `getChatHistory`, `getChat`, `getUser`,
-  `getMessages`, `deleteMessages`, `readHistory` и `editMessageText`
-
-Adapter выдаёт TDLib-shaped `updateAuthorizationState` и `error` JSON. Он
-отклоняет JSON string с escape-последовательностями, чтобы значения оставались
-borrowed. Стандартные `chat_id` разрешаются через bounded `EntityCache`, который
-заполняет host. Обычная форма TDLib принимается; при записи host передаёт
-MTProto random id:
-
-```json
-{
-  "@type": "sendMessage",
-  "chat_id": 123,
-  "options": { "@type": "messageSendOptions", "disable_notification": true },
-  "input_message_content": {
-    "@type": "inputMessageText",
-    "text": { "@type": "formattedText", "text": "hello", "entities": [] }
-  }
-}
-```
-
-Без bounded cache можно использовать `trlib_peer` extension:
-
-```json
-{
-  "@type": "sendMessage",
-  "trlib_peer": {
-    "@type": "inputPeerUser",
-    "user_id": 123,
-    "access_hash": 456
-  },
-  "input_message_content": {
-    "@type": "inputMessageText",
-    "text": { "text": "hello" }
-  },
-  "random_id": 9001
-}
-```
-
-Это даёт использующим названия и authorization states TDLib клиентам путь
-миграции, при этом compatibility код полностью отсутствует в native build.
-
-### Сравнение API TDLib и `tdlib_compat`
-
-Адаптер — небольшой переводчик команд, а не замена асинхронного клиента и
-базы TDLib. Официальный API TDLib намного шире; граница поддерживаемого входа:
-
-| JSON API TDLib | Контракт обычного TDLib | Статус в `tdlib_compat` |
-|---|---|---|
-| `setTdlibParameters` | 14 полей инициализации, БД и test DC | Вход совместим: стандартные поля разбираются и доступны host; TRLib не открывает TDLib БД и не выбирает DC |
-| `setAuthenticationPhoneNumber` | телефон + optional authentication settings | Вход совместим частично: settings разбираются, Firebase/tokens игнорируются |
-| `checkAuthenticationCode` | code-driven auth state machine | Поддержан phone-code flow; host хранит phone/hash |
-| `registerUser` | имя, фамилия, `disable_notification` | Поддержаны все эти поля |
-| `getMe` | возвращает cached `user` | Совместим вход: пишется MTProto `users.getFullUser`, ответ разбирает host |
-| `sendMessage` | `chat_id`, topic/reply, options, markup, любой content | Text subset: стандартные `chat_id`, вложенные options/reply; нужен cache и host `random_id`; нет media/topic/markup |
-| `getChatHistory` | `chat_id`, `from_message_id`, offset, limit, `only_local` | Network subset: все поля разбираются; `chat_id` требует `EntityCache`, `only_local=true` отклоняется |
-| `getChat`, `getUser` | offline cache-backed `chat`/`user` | Совместимый translator: пишет MTProto lookup, host разбирает ответ и держит cache |
-| `getMessages`, `deleteMessages` | int53 chat/message IDs и result objects | Совместимы для Telegram int32 IDs (до 16); результат обрабатывает host |
-| `editMessageText` | reply markup + `inputMessageContent` | Text subset: стандартные IDs и `inputMessageText`, без markup |
-| `readHistory` | в актуальном TDLib нет прямого 1:1 метода | Расширение TRLib для MTProto `messages.readHistory` |
-| updates, results, `@extra`, `td_send`/`td_receive` | асинхронные ответы и ordered cache updates | У host: TRLib не даёт TDLib runtime или JSON result dispatcher |
-
-Для минимальной миграции сохраните имена методов и authorization-state events,
-заполняйте `EntityCache` из update-обработчика и вызывайте
-`write_request_with_random_id` для стандартного `sendMessage`. Клиентам,
-которые используют локальную TDLib БД, media constructors, email/QR/passkey
-login или `@extra`, нужен дополнительный compatibility layer.
-См. [официальный контракт TDLib](https://core.telegram.org/tdlib/getting-started)
-и [актуальный индекс классов](https://core.telegram.org/tdlib/docs/classes.html).
-
 ## Потоковая генерация схемы
 
 Генератор читает TL-схему построчно и пишет constructor ID вместе со статическими
@@ -297,10 +207,10 @@ stripped symbols. Это измерения, а не SLA.
 |---|---:|---:|---:|
 | intermediate core | 332,496 B | 299,582 B | baseline |
 | core + MTProto crypto | 332,496 B | 322,510 B | +22,928 B |
-| core + TDLib adapter/session path | 1,184,464 B | 1,176,394 B | +876,812 B |
 
 Одинаковый размер ELF на диске — эффект выравнивания. `size` показывает
-реальные linked sections. TDLib path opt-in: native build эту разницу не несёт.
+реальные linked sections. Неиспользуемые модули не попадают в native build без
+явного Cargo feature.
 
 ### Local hot path
 
@@ -376,7 +286,7 @@ cargo test --workspace
 cargo check -p trlib-core --no-default-features
 cargo test -p trlib-core --no-default-features --features api
 cargo test -p trlib-core --no-default-features \
-  --features api,crypto-rustcrypto,session-document,session-file,tdlib-compat
+  --features api,crypto-rustcrypto,session-document,session-file
 scripts/check-generated.sh
 ```
 

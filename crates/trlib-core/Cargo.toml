@@ -86,11 +86,6 @@ session-document = ["crypto-rustcrypto"]
 # File-system convenience helpers around `session-document`; applications that
 # have their own storage can use the no_std codec instead.
 session-file = ["session-document", "std"]
-# A small TDLib-shaped command/event adapter.  It is intentionally optional so
-# native TRLib deployments do not link JSON compatibility code or file I/O.
-# The adapter only emits auth, account/users/update and message methods; do not
-# pull unrelated full-schema namespaces into a TDLib migration binary.
-tdlib-compat = ["std", "auth", "api-messages", "session-file"]
 
 [dependencies]
 aes = { workspace = true, optional = true }

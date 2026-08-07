@@ -19,7 +19,6 @@ struct BuildConfig {
     auth: bool,
     session_document: bool,
     session_file: bool,
-    tdlib_compat: bool,
     /// Per-schema-namespace override; `None` means "inherit the `api` key".
     api_namespaces: Vec<(&'static str, Option<bool>)>,
 }
@@ -68,7 +67,6 @@ impl Default for BuildConfig {
             auth: false,
             session_document: false,
             session_file: false,
-            tdlib_compat: false,
             api_namespaces: API_NAMESPACES
                 .iter()
                 .map(|namespace| (*namespace, None))
@@ -172,7 +170,6 @@ fn selected_features(config: &BuildConfig) -> Vec<String> {
     add(config.auth, "auth");
     add(config.session_document, "session-document");
     add(config.session_file, "session-file");
-    add(config.tdlib_compat, "tdlib-compat");
     features
 }
 
@@ -213,7 +210,6 @@ fn parse_config(text: &str) -> Result<BuildConfig, Box<dyn std::error::Error>> {
             "auth" => config.auth = parse_bool(value, line_number)?,
             "session_document" => config.session_document = parse_bool(value, line_number)?,
             "session_file" => config.session_file = parse_bool(value, line_number)?,
-            "tdlib_compat" => config.tdlib_compat = parse_bool(value, line_number)?,
             _ => {
                 let namespace = key.strip_prefix("api_");
                 let Some(namespace) = namespace else {
@@ -277,17 +273,5 @@ mod tests {
     fn api_meta_is_used_when_no_namespace_is_overridden() {
         let config = parse_config("api = true\n").expect("parse");
         assert!(selected_features(&config).contains(&"api".into()));
-    }
-
-    #[test]
-    fn tdlib_compatibility_is_strictly_opt_in() {
-        let disabled = parse_config("tdlib_compat = false\n").expect("parse disabled");
-        assert!(!selected_features(&disabled).contains(&"tdlib-compat".into()));
-
-        let enabled = parse_config("tdlib_compat = true\n").expect("parse enabled");
-        assert_eq!(
-            selected_features(&enabled),
-            ["service", "transport-intermediate", "tdlib-compat"]
-        );
     }
 }

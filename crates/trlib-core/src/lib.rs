@@ -23,8 +23,6 @@ pub mod mtproto;
 pub mod service;
 #[cfg(feature = "session-document")]
 pub mod session;
-#[cfg(feature = "tdlib-compat")]
-pub mod tdlib;
 pub mod tl;
 pub mod transport;
 
