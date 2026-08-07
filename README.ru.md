@@ -280,7 +280,7 @@ stripped symbols. Это измерения, а не SLA.
 |---|---:|---:|---:|
 | intermediate core | 332,496 B | 299,582 B | baseline |
 | core + MTProto crypto | 332,496 B | 322,510 B | +22,928 B |
-| core + TDLib adapter/session path | 1,184,464 B | 1,176,142 B | +876,560 B |
+| core + TDLib adapter/session path | 1,184,464 B | 1,176,394 B | +876,812 B |
 
 Одинаковый размер ELF на диске — эффект выравнивания. `size` показывает
 реальные linked sections. TDLib path opt-in: native build эту разницу не несёт.

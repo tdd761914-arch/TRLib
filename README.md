@@ -286,7 +286,7 @@ the size of the `no_std` parser alone.
 |---|---:|---:|---:|
 | intermediate core | 332,496 B | 299,582 B | baseline |
 | core + MTProto crypto | 332,496 B | 322,510 B | +22,928 B |
-| core + TDLib adapter/session path | 1,184,464 B | 1,176,142 B | +876,560 B |
+| core + TDLib adapter/session path | 1,184,464 B | 1,176,394 B | +876,812 B |
 
 The identical on-disk ELF lengths are alignment artifacts. `size` reports the
 actual linked sections. The TDLib path is intentionally opt-in; a native build
