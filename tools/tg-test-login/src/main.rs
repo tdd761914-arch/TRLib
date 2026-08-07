@@ -12,6 +12,7 @@ use trlib_core::api::{
 };
 use trlib_core::auth_key::{AuthKeyHandshake, AuthKeyMaterial, RandomSource};
 use trlib_core::crypto::{AuthKeyRef, CryptoDirection, RustCrypto, SessionCrypto};
+use trlib_core::generated::users::USERS_USER_FULL;
 use trlib_core::mtproto::{
     ExternalEnvelope, OutboundMessage, encode_encrypted, parse_decrypted, parse_external,
 };
@@ -153,9 +154,14 @@ fn run() -> Result<()> {
                 &body[..request_len],
                 &mut frame,
             )?;
-            let mut profile = Cursor::new(&frame[..response_len]);
+            let profile_result = rpc_result_body(&frame[..response_len])?;
+            let mut profile = Cursor::new(profile_result);
             let profile_constructor = profile.read_constructor()?.get();
-            println!("getMe response constructor: {profile_constructor:#010x}");
+            if profile_constructor == USERS_USER_FULL.get() {
+                println!("getMe profile response: users.userFull ({profile_constructor:#010x})");
+            } else {
+                println!("getMe response constructor: {profile_constructor:#010x}");
+            }
         }
         AuthResponse::RpcError(error) => {
             eprintln!("Telegram RPC {}: {}", error.code, error.message.as_str());
