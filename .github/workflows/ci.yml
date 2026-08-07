@@ -19,9 +19,9 @@ jobs:
       - run: cargo check -p trlib-core --no-default-features
       - run: cargo test --workspace
       - run: cargo test -p trlib-core --no-default-features --features crypto-rustcrypto
-      - run: cargo test -p trlib-core --no-default-features --features api,crypto-rustcrypto,session-document,session-file,tdlib-compat
+      - run: cargo test -p trlib-core --no-default-features --features api,crypto-rustcrypto,session-document,session-file
       - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo clippy -p trlib-core --all-targets --no-default-features --features api,crypto-rustcrypto,session-document,session-file,tdlib-compat -- -D warnings
+      - run: cargo clippy -p trlib-core --all-targets --no-default-features --features api,crypto-rustcrypto,session-document,session-file -- -D warnings
       - run: scripts/check-generated.sh
       - run: cargo run --locked -p trlib-build -- --config trlib.conf --dry-run
       - run: cargo build --locked --release -p size-probe
